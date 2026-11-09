@@ -149,7 +149,7 @@ def team_context(sport, sched, game, geo_cache):
 # ======================================================================================
 # Player projection
 # ======================================================================================
-def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, implied):
+def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, implied, extra=None):
     grp = role(sport, pl["pos"])
     keys = stats_for(sport, grp)
     if not games:
@@ -233,6 +233,9 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
                     add("Travel", 0.98, f"{ctx['travel']} miles since last game")
                 if ctx.get("road", 0) >= 2:
                     add("Road trip", 0.99, f"Road game #{ctx['road']} in a row")
+        if extra:
+            for f in extra(k, grp):
+                add(*f)
         mult = 1.0
         for f in factors:
             mult *= f[1]
