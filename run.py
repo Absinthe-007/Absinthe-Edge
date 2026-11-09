@@ -8,6 +8,9 @@ from datetime import datetime, timedelta, timezone
 
 import sources as S
 import model as M
+import extras as X
+
+VERSION = "1.1"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -84,7 +87,8 @@ def build_sport(sport, now, track, geo):
     boxes = {k: v for k, v in boxes.items() if k in ids}
     S.save_json(bpath, boxes)
     dvp = M.build_dvp(sport, boxes, roster)
-    S.log(f"[dvp] {sport}: {len(boxes)} box scores")
+    usage = X.build_usage(sport, boxes)
+    S.log(f"[dvp] {sport}: {len(boxes)} box scores, {len(usage['players'])} players with usage")
 
     # lines
     p6props, payouts = S.pick6(sport)
@@ -143,6 +147,15 @@ def build_sport(sport, now, track, geo):
     # game logs + projections
     logs = dict(zip(need, S.pmap(lambda a: S.gamelog(sport, a, now), list(need), 10)))
     players, details = {}, {}
+    injc, pacec = {}, {}
+    for gid, g in games.items():
+        h, a = g["home"]["abbr"], g["away"]["abbr"]
+        injc[(gid, h)] = X.injury_context(sport, h, a, roster, usage)
+        injc[(gid, a)] = X.injury_context(sport, a, h, roster, usage)
+        pacec[gid] = X.game_pace(usage, h, a) if sport == "NBA" else (None, None)
+    lines_by_pid = {}
+    for p in props:
+        lines_by_pid.setdefault(p["pid"], set()).add(p["key"])
     for aid, (pl, g) in need.items():
         is_home = pl["team"] in S.abbr_set(sport, g["home"]["abbr"])
         opp = g["away"]["abbr"] if is_home else g["home"]["abbr"]
@@ -150,7 +163,10 @@ def build_sport(sport, now, track, geo):
         implied = M.implied_totals(g, gproj[g["id"]]).get(team)
         pl = dict(pl, team=team)
         gl = logs.get(aid) or []
-        grp, proj = M.project_player(sport, pl, gl, g, is_home, opp, dvp, ctx.get((g["id"], team)), wx.get(g["id"]), stand, implied)
+        tctx = ctx.get((g["id"], team)) or {}
+        rest = X.player_rest(sport, gl, g, sched.get(g["home"]["id"] if is_home else g["away"]["id"], []), usage, aid, team)
+        ext = X.extra_factors(sport, rest, injc.get((g["id"], team), {}), pacec[g["id"]][1], tctx.get("b2b"))
+        grp, proj = M.project_player(sport, pl, gl, g, is_home, opp, dvp, tctx, wx.get(g["id"]), stand, implied, ext)
         if not proj:
             continue
         keys = list(proj.keys())
@@ -158,7 +174,13 @@ def build_sport(sport, now, track, geo):
         rk = (dvp["ranks"].get(opp) or {}).get(grp)
         players[aid] = {"id": aid, "name": pl["name"], "team": team, "opp": opp, "home": is_home, "gameId": g["id"], "pos": pl["pos"], "grp": grp,
                         "img": pl["img"], "dkImg": dk, "inj": pl.get("inj"), "proj": {k: round(v["proj"], 1) for k, v in proj.items()},
-                        "oppRank": rk}
+                        "oppRank": rk, "rest": {k: v for k, v in rest.items()},
+                        "l10": {k: list(reversed(proj[k]["l10"])) for k in proj if k in lines_by_pid.get(aid, ())}}
+        mainkey = next((k for k in ("points", "pass_yds", "rush_rec_yds", "rec_yds", "tackles", "kick_pts") if k in proj), keys[0])
+        mm = 1.0
+        for f in proj[mainkey]["factors"]:
+            mm *= f[1]
+        players[aid]["grade"] = X.grade(mm)
         cur = [x for x in gl if x["season"] == gl[0]["season"]] if gl else []
         details[aid] = {"bio": {k: v for k, v in {"ht": pl.get("ht"), "wt": pl.get("wt"), "age": pl.get("age"), "college": pl.get("college"),
                                                   "exp": pl.get("exp"), "jersey": pl.get("jersey"), "posName": pl.get("posName"),
@@ -168,7 +190,8 @@ def build_sport(sport, now, track, geo):
                         "avg": [round(M.mean([x["s"].get(k) for x in cur]) or 0, 1) if cur else None for k in keys],
                         "recent": [row(x, keys) for x in gl[:10]],
                         "vs": [row(x, keys) + [x["season"]] for x in gl if x["opp"] in S.abbr_set(sport, opp)][:12],
-                        "ctx": ctx.get((g["id"], team)), "gp": len(cur)}
+                        "ctx": ctx.get((g["id"], team)), "gp": len(cur), "rest": rest,
+                        "inj": {k: v for k, v in injc.get((g["id"], team), {}).items() if k in ("mates", "foes")}}
 
     # picks
     calib = track.get("calib") or {}
@@ -218,6 +241,11 @@ def build_sport(sport, now, track, geo):
                 "l10": [sum(1 for v in l10 if v > p["line"]), len(l10)], "vs": [sum(1 for v in vsl if v > p["line"]), len(vsl)],
                 "inj": pl.get("inj")}
         injured = (pl.get("inj") or "").lower() in ("out", "doubtful", "injured reserve", "suspension")
+        base["streak"] = X.streak(l10, p["line"])
+        fm = 1.0
+        for f in proj.get("factors") or []:
+            fm *= f[1]
+        base["grade"] = X.grade(fm)
         mid = M.market_mid(p) if p["platform"] == "Kalshi" else ladder_p(p["pid"], p["key"], p["line"])
         base["mkt"] = round(mid, 3) if mid is not None else None
         base["model"] = round(pm, 3)
@@ -265,6 +293,22 @@ def build_sport(sport, now, track, geo):
         if p["platform"] == "Kalshi" and p["rec"] and best.get((p["pid"], p["key"])) is not p:
             p["rec"] = False
             p["alt"] = True
+    # line movement since we first saw each line
+    opens = track.setdefault("open", {})
+    for p in picks:
+        cur = p["line"] if p["platform"] == "Pick6" else round((p["yesAsk"] + (1 - p["noAsk"])) / 2, 3)
+        o = opens.get(p["id"])
+        if not o:
+            opens[p["id"]] = [cur, p["start"]]
+            continue
+        mv = round(cur - o[0], 3)
+        if abs(mv) >= (0.5 if p["platform"] == "Pick6" else 0.03):
+            p["mv"] = mv
+            p["open"] = o[0]
+            toward = mv if p["side"] in ("MORE", "YES") else -mv
+            p["mvOurs"] = toward > 0
+    for p in picks:
+        p["tier"] = X.tier(p)
     gpicks = []
     for m in kgame:
         g = games[m["gameId"]]
@@ -298,9 +342,14 @@ def build_sport(sport, now, track, geo):
         if p["rec"] and gbest.get((p["gameId"], p["type"])) is not p:
             p["rec"] = False
             p["alt"] = True
+    for p in gpicks:
+        p["tier"] = X.tier(p)
 
     for gid, g in games.items():
         g["proj"] = gproj[gid]
+        g["pace"] = {"game": pacec[gid][0], g["home"]["abbr"]: (usage["pace"].get(g["home"]["abbr"]) if sport == "NBA" else None),
+                     g["away"]["abbr"]: (usage["pace"].get(g["away"]["abbr"]) if sport == "NBA" else None)} if pacec[gid][0] else None
+        g["out"] = {g[s]["abbr"]: injc[(gid, g[s]["abbr"])]["mates"] for s in ("home", "away")}
         g["weather"] = wx.get(gid)
         g["ctx"] = {g["home"]["abbr"]: ctx.get((gid, g["home"]["abbr"])), g["away"]["abbr"]: ctx.get((gid, g["away"]["abbr"]))}
         g["stand"] = {s: {k: v for k, v in (stand.get(g[s]["abbr"]) or {}).items() if k in ("w", "l", "pf", "pa", "pfRank", "paRank", "pctRank", "home", "road")}
@@ -346,7 +395,8 @@ def save_pending(track, board, now):
             pend[p["id"]] = {"s": sport, "pf": p["platform"], "g": p["gameId"], "t": p["start"], "pid": p.get("pid"),
                              "nm": p.get("player") or p.get("label"), "k": p.get("key") or p.get("type"), "line": p["line"],
                              "side": p["side"], "prob": p["prob"], "raw": p.get("rawP"), "rec": bool(p["rec"]), "price": p.get("price"),
-                             "team": p.get("team"), "stat": p.get("stat") or p.get("label"), "type": "prop" if p.get("pid") else p.get("type")}
+                             "team": p.get("team"), "stat": p.get("stat") or p.get("label"), "type": "prop" if p.get("pid") else p.get("type"),
+                             "tier": p.get("tier")}
         for aid, pl in b["players"].items():
             g = next((x for x in b["games"] if x["id"] == pl["gameId"]), None)
             if g and S.parse_t(g["start"]) > now:
@@ -409,7 +459,7 @@ def grade(track, now):
             profit = (1 - e["price"]) / e["price"] if res == "w" else -1.0
         n += 1
         tag = "rec" if e["rec"] else "lean"
-        for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}"):
+        for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}") + ((f"tier|{e['tier']}",) if e.get("tier") else ()):
             bump(agg, f"{tag}|{key}", res, profit)
         if res in ("w", "l"):
             day = (t - timedelta(hours=5)).date().isoformat()
@@ -450,6 +500,7 @@ def grade(track, now):
                 r[2] = round(r[2] + av, 2)
                 r[3] += 1 if abs(pv - av) <= max(0.25 * max(av, pv), 1.0) else 0
     track["recent"] = recent[-400:]
+    track["open"] = {k: v for k, v in (track.get("open") or {}).items() if S.parse_t(v[1]) and S.parse_t(v[1]) > now - timedelta(hours=6)}
     track["daily"] = dict(sorted(daily.items())[-60:])
     # learn: shrink or stretch probabilities per stat from how well-calibrated the leans were
     calib = {}
@@ -493,7 +544,7 @@ def main():
     S.save_json(f"{DATA}/track.json", track)
     S.save_json(f"{DATA}/players.json", players)
     S.save_json(f"{DATA}/cache/geo.json", geo)
-    S.save_json(f"{DATA}/board.json", {"updated": now.isoformat()[:19] + "Z", "sports": board,
+    S.save_json(f"{DATA}/board.json", {"updated": now.isoformat()[:19] + "Z", "version": VERSION, "sports": board,
                                        "summary": summary(track), "log": S.LOG[-60:], "secs": round(time.time() - t0)})
     S.log(f"done in {time.time()-t0:.0f}s")
 
