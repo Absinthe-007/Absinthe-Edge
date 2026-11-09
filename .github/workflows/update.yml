@@ -1,0 +1,81 @@
+name: Update board
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"      # every 2 hours, all day
+    - cron: "47 15-23 * * *"    # extra runs in the hours before US game times
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: board
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+
+      - name: Restore box-score cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+
+      - name: Pull last published data (keeps the accuracy history)
+        run: |
+          mkdir -p data
+          SITE="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          for f in track board players; do
+            curl -fsSL "$SITE/data/$f.json" -o "data/$f.json.new" && mv "data/$f.json.new" "data/$f.json" || rm -f "data/$f.json.new"
+          done
+          # fall back to the cached copy if the site could not be reached
+          if [ ! -s data/track.json ] && [ -s data/cache/track_backup.json ]; then cp data/cache/track_backup.json data/track.json; fi
+          ls -la data
+
+      - name: Build picks, projections and grades
+        run: python run.py
+
+      - name: Back up tracker
+        if: always()
+        run: '[ -s data/track.json ] && cp data/track.json data/cache/track_backup.json || true'
+
+      - name: Save cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cache
+          key: data-${{ github.run_id }}
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp index.html _site/
+          cp data/board.json data/players.json data/track.json _site/data/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
