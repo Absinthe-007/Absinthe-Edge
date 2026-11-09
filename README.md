@@ -17,6 +17,13 @@ NFL + NBA picks for **Kalshi** and **DraftKings Pick6**, with a full projected s
 - Projects every game's score, win chance, spread and total.
 - **Self-checking:** saves every pick and projection before the game, grades them against the ESPN box score afterward, and shows the record by platform, bet type, stat and confidence, plus calibration and projection error. Once a stat has 30+ graded picks, the model rescales its own confidence for that stat.
 
+## V1.1
+- Redesigned dashboard: trading-card picks with team colors and player photos, grouped by game, phone layout with bottom tabs.
+- Lock / Strong / Lean tiers, last-10 sparklines, A–F matchup grades, over/under streaks, line movement.
+- Player rest and workload (days off, missed games, minutes or touches), usage trends (minutes, shots, target share, carries).
+- Teammate injuries (usage boost), starting QB out, opposing defenders out, NBA pace.
+- Files: `extras.py` holds the new context features.
+
 ## How it updates
 `.github/workflows/update.yml` runs `run.py` every 2 hours, plus hourly from 15:00–23:00 UTC before US game times. You can also run it any time with **Actions → Update board → Run workflow**. The site is published with GitHub Pages (Settings → Pages → Source: **GitHub Actions**). The accuracy history is carried from run to run by reading the last published `data/track.json`.
 
@@ -25,6 +32,7 @@ No API keys, no cost.
 ## Files
 - `sources.py`: Pick6, Kalshi, ESPN and Open-Meteo scrapers
 - `model.py`: projections, defense vs position, game model, Kalshi pricing
+- `extras.py`: rest, injuries, usage, pace, tiers, streaks, matchup grades
 - `run.py`: builds `data/board.json`, `data/players.json` and grades `data/track.json`
 - `index.html`: the dashboard
 
