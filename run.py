@@ -227,8 +227,10 @@ def build_sport(sport, now, track, geo):
             side = "MORE" if pm >= 0.5 else "LESS"
             prob = pm if side == "MORE" else 1 - pm
             mult = p.get("moreMult") if side == "MORE" else p.get("lessMult")
-            base.update({"side": side, "prob": round(prob, 3), "edge": round(prob - be, 3), "mult": mult, "offered": mult is not None,
-                         "rec": mult is not None and prob >= be + 0.02 and proj["n"] >= 3 and not injured,
+            # a reduced (or boosted) Pick6 multiplier changes the hit rate needed to break even
+            be_p = be * (mult ** (-1 / 3)) if mult else be
+            base.update({"side": side, "prob": round(prob, 3), "edge": round(prob - be_p, 3), "mult": mult, "offered": mult is not None,
+                         "rec": mult is not None and prob >= be_p + 0.02 and proj["n"] >= 3 and not injured,
                          "url": "https://pick6.draftkings.com/?sport=" + sport})
         else:
             ks = M.kalshi_side(pm, p, 0.05)
