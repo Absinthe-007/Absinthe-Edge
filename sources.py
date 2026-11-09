@@ -568,7 +568,8 @@ def box_value(sport, key, st):
             return "dnp"
         P, R, A, S, B = (num(r.get(k)) for k in ("PTS", "REB", "AST", "STL", "BLK"))
         vals = {"points": P, "rebounds": R, "assists": A, "threes": split_num(r.get("3PT"), 0), "steals": S, "blocks": B,
-                "turnovers": num(r.get("TO")), "min": num(r.get("MIN"))}
+                "turnovers": num(r.get("TO")), "min": num(r.get("MIN")), "fga": split_num(r.get("FG"), 1),
+                "fta": split_num(r.get("FT"), 1), "oreb": num(r.get("OREB"))}
         if None not in (P, R, A, S, B):
             vals.update({"pra": P + R + A, "pts_reb": P + R, "pts_ast": P + A, "reb_ast": R + A, "stl_blk": S + B})
         return vals if key is None else vals.get(key)
@@ -582,7 +583,7 @@ def box_value(sport, key, st):
             "pass_cmp": split_num(pa.get("C/ATT"), 0) or 0.0, "pass_att": split_num(pa.get("C/ATT"), 1) or 0.0,
             "rush_yds": z(ru, "YDS"), "rush_att": z(ru, "CAR"), "rec_yds": z(rc, "YDS"), "receptions": z(rc, "REC"),
             "targets": z(rc, "TGTS"), "long_rec": z(rc, "LONG"), "anytime_td": z(ru, "TD") + z(rc, "TD"),
-            "tackles": z(de, "TOT"), "sacks": z(de, "SACKS"), "fg_made": split_num(ki.get("FG"), 0) or 0.0, "kick_pts": z(ki, "PTS")}
+            "tackles": z(de, "TOT"), "sacks": z(de, "SACKS"), "pd": z(de, "PD"), "fg_made": split_num(ki.get("FG"), 0) or 0.0, "kick_pts": z(ki, "PTS")}
     vals["rush_rec_yds"] = vals["rush_yds"] + vals["rec_yds"]
     vals["pass_rush_yds"] = vals["pass_yds"] + vals["rush_yds"]
     return vals if key is None else vals.get(key)
@@ -631,6 +632,8 @@ def gamelog(sport, aid, now):
                         elif n == "sacks":
                             if not is_qb:
                                 s["sacks"] = num(v)
+                        elif n == "fieldGoalsMade-fieldGoalsAttempted":
+                            s["fga"] = split_num(v, 1)
                         elif n in GL_MAP:
                             s[GL_MAP[n]] = split_num(v, 0) if "-" in n else num(v)
                     if sport == "NBA":
