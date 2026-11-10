@@ -10,7 +10,7 @@ import sources as S
 import model as M
 import extras as X
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -530,6 +530,8 @@ def grade(track, now):
             kk = M.clamp((hits / cnt - 0.5) / (sp / cnt - 0.5), 0.25, 1.2)
             calib[k] = round((kk * cnt + M.DEFAULT_SHRINK * 40) / (cnt + 40), 3)
     track["calib"] = calib
+    if n:
+        track["gradedAt"] = now.isoformat()[:19] + "Z"
     S.log(f"[grade] graded {n}; pending {len(pend)} picks, {len(pproj)} projections")
 
 
@@ -580,7 +582,7 @@ def summary(track):
                 "roi": round(r["pl"] / r["stake"], 4) if r.get("stake") else None}
     out = {"agg": {k: pct(k) for k in agg}, "daily": track.get("daily", {}), "bins": track.get("bins", {}),
            "projErr": track.get("projErr", {}), "recent": track.get("recent", [])[-250:], "calib": track.get("calib", {}),
-           "pending": len(track.get("pending", {})), "since": track.get("since")}
+           "pending": len(track.get("pending", {})), "since": track.get("since"), "gradedAt": track.get("gradedAt")}
     track.setdefault("since", datetime.now(timezone.utc).date().isoformat())
     out["since"] = track["since"]
     return out
