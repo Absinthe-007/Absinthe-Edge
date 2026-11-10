@@ -34,7 +34,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .brand{display:flex;align-items:center;gap:10px}
 .brand .mk{width:34px;height:34px;border-radius:10px;background:conic-gradient(from 210deg,var(--brass),#e07b39,var(--brass));display:grid;place-items:center;color:var(--ink);font:800 20px var(--display)}
 .brand b{font:800 22px/1 var(--display);letter-spacing:.06em}
-.ver{font:700 10px var(--body);color:var(--brass);background:var(--brassbg);border:1px solid rgba(240,181,74,.35);padding:1px 7px;border-radius:99px;letter-spacing:.05em}
+.ver{font:700 11px var(--body);color:var(--brass);background:var(--brassbg);border:1px solid rgba(240,181,74,.35);padding:2px 7px;border-radius:99px;margin-left:6px;vertical-align:3px;letter-spacing:.04em}
 .meta{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:10.5px;line-height:1.25;color:var(--dim);white-space:nowrap}
 .meta b{color:var(--muted);font-weight:600}
 .brand small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px}
@@ -202,11 +202,11 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 <body>
 <header>
   <div class="wrap hrow">
-    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
+    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V1.2</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
     <div class="seg" id="sportSeg"><button data-s="NFL">NFL</button><button data-s="NBA">NBA</button></div>
     <div class="grow"></div>
     <input class="search" id="q" placeholder="Search player or team" aria-label="Search player or team">
-    <div class="meta" id="meta"><span class="ver" id="ver">V1.2</span><span id="updG">Games updating…</span><span id="updR"></span></div>
+    <div class="meta" id="meta"><span id="updG">Games updating…</span><span id="updR"></span></div>
   </div>
   <div class="wrap"><nav class="tabs" id="tabs">
     <button data-t="picks">Top Picks</button><button data-t="players">Projections</button>
