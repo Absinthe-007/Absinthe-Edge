@@ -365,6 +365,27 @@ def build_sport(sport, now, track, geo):
 # ======================================================================================
 # Self-grading
 # ======================================================================================
+LABEL_KEY = {v: k for k, v in M.LABEL.items()}
+
+
+def fill_graded(r):
+    """Older graded rows lack stat key / bet type / tier: work them out from what was stored."""
+    if len(r) >= 15:
+        return r
+    s, pf, nm, stat, line, side, prob, val, res, day, rec, price = r[:12]
+    st = (stat or "").lower()
+    typ = "ml" if st.endswith(" to win") else "spread" if " wins by " in st else "total" if st.startswith("total over") else "prop"
+    key = typ if typ != "prop" else (LABEL_KEY.get(stat) or S.stat_key(stat, s) or st)
+    tier = None
+    if rec:
+        if pf == "Pick6":
+            tier = "Lock" if prob >= 0.68 else "Strong" if prob >= 0.62 else "Lean"
+        elif price:
+            edge = prob - price
+            tier = "Lock" if edge >= 0.10 else "Strong" if edge >= 0.07 else "Lean"
+    return [s, pf, nm, stat, line, side, prob, val, res, day, rec, price, key, typ, tier]
+
+
 def conf_bucket(p):
     for lo in (0.70, 0.65, 0.60, 0.55):
         if p >= lo:
@@ -476,7 +497,7 @@ def grade(track, now):
             bb[0] += 1
             bb[1] += 1 if res == "w" else 0
         recent.append([e["s"], e["pf"], e["nm"], e["stat"], e["line"], e["side"], e["prob"], val if not isinstance(val, str) else None, res,
-                       e["t"][:10], e["rec"], e.get("price")])
+                       e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier")])
     for key, e in list(pproj.items()):
         t = S.parse_t(e["t"])
         if not t or now < t + timedelta(hours=GRADE_AFTER_H[e["s"]]):
@@ -499,7 +520,7 @@ def grade(track, now):
                 r[1] = round(r[1] + abs(pv - av), 2)
                 r[2] = round(r[2] + av, 2)
                 r[3] += 1 if abs(pv - av) <= max(0.25 * max(av, pv), 1.0) else 0
-    track["recent"] = recent[-400:]
+    track["recent"] = [fill_graded(x) for x in recent[-5000:]]
     track["open"] = {k: v for k, v in (track.get("open") or {}).items() if S.parse_t(v[1]) and S.parse_t(v[1]) > now - timedelta(hours=6)}
     track["daily"] = dict(sorted(daily.items())[-60:])
     # learn: shrink or stretch probabilities per stat from how well-calibrated the leans were
