@@ -34,7 +34,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .brand{display:flex;align-items:center;gap:10px}
 .brand .mk{width:34px;height:34px;border-radius:10px;background:conic-gradient(from 210deg,var(--brass),#e07b39,var(--brass));display:grid;place-items:center;color:var(--ink);font:800 20px var(--display)}
 .brand b{font:800 22px/1 var(--display);letter-spacing:.06em}
-.ver{font:700 11px var(--body);color:var(--brass);background:var(--brassbg);border:1px solid rgba(240,181,74,.35);padding:2px 7px;border-radius:99px;margin-left:6px;vertical-align:3px;letter-spacing:.04em}
+.ver{font:700 10px var(--body);color:var(--brass);background:var(--brassbg);border:1px solid rgba(240,181,74,.35);padding:1px 7px;border-radius:99px;letter-spacing:.05em}
+.meta{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:10.5px;line-height:1.25;color:var(--dim);white-space:nowrap}
+.meta b{color:var(--muted);font-weight:600}
 .brand small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px}
 .seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px}
 .seg button{border:0;background:none;padding:7px 16px;border-radius:9px;font:700 16px var(--display);letter-spacing:.06em;color:var(--muted)}
@@ -42,7 +44,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .grow{flex:1}
 .search{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;width:240px;outline:none}
 .search:focus{border-color:var(--brass)}
-.upd{color:var(--dim);font-size:12px}
+
 nav.tabs{display:flex;gap:2px}
 nav.tabs button{border:0;background:none;padding:11px 14px;color:var(--muted);font-weight:600;border-bottom:2px solid transparent}
 nav.tabs button.on{color:var(--chalk);border-color:var(--brass)}
@@ -86,6 +88,7 @@ h2 .cnt{font:500 13px var(--body);color:var(--dim)}
 .pw b{font:800 18px var(--display);letter-spacing:.02em;white-space:nowrap}
 .pw .sc{font:800 22px var(--display);line-height:1}
 .pw .w{font-size:11px;color:var(--muted)}
+.pw .tot{font-size:11.5px;color:var(--chalk);margin-top:2px}.pw .tot b{font:800 16px var(--display);color:var(--brass)}
 .gbm{display:flex;flex-wrap:wrap;gap:6px 8px;padding:10px 18px;border-top:1px solid var(--line);background:var(--ink2)}
 .tag{font-size:11.5px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);padding:3px 8px;border-radius:7px;white-space:nowrap}
 .tag.g{color:var(--more);border-color:rgba(61,220,151,.3)}.tag.r{color:var(--less);border-color:rgba(255,111,111,.3)}.tag.y{color:var(--warn);border-color:rgba(255,209,102,.3)}
@@ -180,7 +183,8 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 @media (max-width:1000px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.two{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:680px){
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .search{order:9;width:100%}.upd,.brand small,.grow{display:none}.seg{margin-left:auto}
+  .search{order:9;width:100%}.brand small,.grow{display:none}
+  .meta{order:10;width:100%;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:2px 10px;align-items:center}.seg{margin-left:auto}
   nav.tabs{display:none}
   .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(15,22,40,.96);backdrop-filter:blur(12px);border-top:1px solid var(--line);padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
   .bnav button{flex:1;border:0;background:none;color:var(--dim);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0}
@@ -198,11 +202,11 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 <body>
 <header>
   <div class="wrap hrow">
-    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V1.1</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
+    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
     <div class="seg" id="sportSeg"><button data-s="NFL">NFL</button><button data-s="NBA">NBA</button></div>
     <div class="grow"></div>
     <input class="search" id="q" placeholder="Search player or team" aria-label="Search player or team">
-    <div class="upd" id="upd"></div>
+    <div class="meta" id="meta"><span class="ver" id="ver">V1.2</span><span id="updG">Games updating…</span><span id="updR"></span></div>
   </div>
   <div class="wrap"><nav class="tabs" id="tabs">
     <button data-t="picks">Top Picks</button><button data-t="players">Projections</button>
@@ -350,7 +354,7 @@ function projWinner(g, long) {
   const pr = g.proj || {}; if (pr.homePts == null) return "";
   const homeWins = pr.homePts >= pr.awayPts, w = homeWins ? g.home : g.away, l = homeWins ? g.away : g.home;
   const wp = homeWins ? pr.pHome : 1 - pr.pHome, ws = homeWins ? pr.homePts : pr.awayPts, ls = homeWins ? pr.awayPts : pr.homePts;
-  return `<div class="pw"><span>Projected winner</span><b>${logo(w.abbr, "", "width:20px;height:20px;vertical-align:-5px;margin-right:4px")}${esc(w.short)}</b><span class="num sc">${Math.round(ws)}–${Math.round(ls)}</span><span class="w">${pct(wp)} to win · total ${Math.round(pr.total)}${long ? ` · ${esc(l.short)} ${pct(1-wp)}` : ""}</span></div>`;
+  return `<div class="pw"><span>Projected winner</span><b>${logo(w.abbr, "", "width:20px;height:20px;vertical-align:-5px;margin-right:4px")}${esc(w.short)}</b><span class="num sc">${Math.round(ws)}–${Math.round(ls)}</span><span class="w">${pct(wp)} to win</span><span class="tot">Total <b>${fmt(pr.total)}</b> pts${g.ou ? ` · Vegas ${fmt(g.ou)}` : ""}</span></div>`;
 }
 function gameBanner(g, withPicks=true) {
   const pr = g.proj || {};
@@ -491,7 +495,7 @@ function renderGames() {
     return gameBanner(g, false).replace(/<\/div>$/, "") + `
       <div class="wpb"><div style="width:${(1-pr.pHome)*100}%;background:${ac}"></div><div style="flex:1;background:${hc}"></div></div>
       <div class="wpl"><span>${esc(g.away.abbr)} ${pct(1-pr.pHome)} to win</span><span>${esc(g.home.abbr)} ${pct(pr.pHome)} to win</span></div>
-      <dl class="kv"><dt>Projected</dt><dd><b>${pr.homePts >= pr.awayPts ? esc(g.home.short) : esc(g.away.short)} win</b>, ${esc(g.away.abbr)} ${fmt(pr.awayPts)} – ${esc(g.home.abbr)} ${fmt(pr.homePts)} (total ${fmt(pr.total)})</dd><dt>Spread</dt><dd>Vegas ${esc(g.spreadTxt||"—")} · model ${pr.modelMargin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.modelMargin))} · blended ${pr.margin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.margin))}</dd>
+      <dl class="kv"><dt>Projected</dt><dd><b>${pr.homePts >= pr.awayPts ? esc(g.home.short) : esc(g.away.short)} win</b>, ${esc(g.away.abbr)} ${fmt(pr.awayPts)} – ${esc(g.home.abbr)} ${fmt(pr.homePts)}</dd><dt>Total points</dt><dd><b>${fmt(pr.total)}</b> combined${g.ou ? ` (Vegas O/U ${fmt(g.ou)}, model alone ${fmt(pr.modelTotal)})` : ""}</dd><dt>Spread</dt><dd>Vegas ${esc(g.spreadTxt||"—")} · model ${pr.modelMargin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.modelMargin))} · blended ${pr.margin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.margin))}</dd>
         <dt>Total</dt><dd>Vegas ${fmt(g.ou)} · model ${fmt(pr.modelTotal)} · blended ${fmt(pr.total)}</dd>
         ${g.pace ? `<dt>Pace</dt><dd>${esc(g.away.abbr)} ${fmt(g.pace[g.away.abbr]?.pace)} (#${g.pace[g.away.abbr]?.rank}) · ${esc(g.home.abbr)} ${fmt(g.pace[g.home.abbr]?.pace)} (#${g.pace[g.home.abbr]?.rank}) possessions</dd>` : ""}
         ${(pr.notes||[]).length ? `<dt>Notes</dt><dd>${pr.notes.map(esc).join(" · ")}</dd>` : ""}</dl>
@@ -623,8 +627,9 @@ function renderHow() {
     <p class="note" style="margin-top:10px"><b>Matchup grade (A–F)</b> rolls every adjustment for that stat into one letter: A means the setup lifts him 7%+, F means it costs him 7%+. <b>Streak</b> counts straight games over or under the line. <b>Line movement</b> shows how far a Pick6 line or Kalshi price has moved since this board first saw it, and whether it moved toward our side.</p>
     <h3 style="margin-top:14px">Self-checking</h3>
     <p class="note">Every pick and projected stat is saved before the game and graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
-    <h3 style="margin-top:14px">What's new in V1.1</h3>
-    <p class="note">Redesigned cards with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, and a phone layout with bottom tabs.</p>
+    <h3 style="margin-top:14px">Version history</h3>
+    <p class="note">Small batches of features add 0.1; a big overhaul moves to the next whole number (2.0).</p>
+    ${[["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
     <h3 style="margin-top:14px">Limits</h3>
     <p class="note">Free data doesn't say who guards whom, so "vs the defender" means what the defense allows to that position. NFL snap counts aren't public in this data, so workload uses targets and carries. Injury news can break after the last refresh.</p></div></div>`;
 }
@@ -649,7 +654,11 @@ let qt; $("#q").addEventListener("input", e => { clearTimeout(qt); qt = setTimeo
   try { B = await (await fetch("data/board.json?t=" + Date.now())).json(); }
   catch (e) { $("#v-picks").innerHTML = `<div class="empty">No data yet. The first update runs a few minutes after setup.</div>`; return; }
   if (!B.sports[S.sport]) S.sport = Object.keys(B.sports)[0] || "NBA";
-  $("#upd").textContent = "Updated " + ago(B.updated);
+  const stamp = t => new Date(t).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
+  $("#updG").innerHTML = `Games &amp; lines <b>${stamp(B.updated)}</b>`;
+  const ga = (B.summary || {}).gradedAt;
+  const lastDay = ((B.summary || {}).recent || []).map(r => r[9]).sort().pop();
+  $("#updR").innerHTML = ga ? `Grades <b>${stamp(ga)}</b>` : lastDay ? `Grades <b>through ${new Date(lastDay + "T12:00:00").toLocaleDateString([], {month:"short", day:"numeric"})} games</b>` : `Grades <b>waiting on first finals</b>`;
   if (B.version) $("#ver").textContent = "V" + B.version;
   render();
   try { P = await (await fetch("data/players.json?t=" + Date.now())).json(); } catch (e) { P = {}; }
