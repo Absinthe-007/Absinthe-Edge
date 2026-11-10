@@ -2,8 +2,7 @@ name: Update board
 
 on:
   schedule:
-    - cron: "17 */2 * * *"      # every 2 hours, all day
-    - cron: "47 15-23 * * *"    # extra runs in the hours before US game times
+    - cron: "7,37 * * * *"      # every 30 minutes (GitHub skips some scheduled runs when busy)
   workflow_dispatch:
   push:
     branches: [main]
