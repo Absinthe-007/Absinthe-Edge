@@ -52,7 +52,7 @@ nav.tabs button.on{color:var(--chalk);border-color:var(--brass)}
 .strip .dot{width:9px;height:9px;border-radius:50%;background:var(--brass);box-shadow:0 0 0 4px var(--brassbg);flex:none}
 .strip b{font-family:var(--display);font-size:18px;letter-spacing:.02em}
 .strip .m{color:var(--muted)}
-.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:16px 0 4px}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:16px 0 4px}
 .kpi{background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
 .kpi .l{color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
 .kpi .v{font:800 30px/1.1 var(--display);margin-top:4px}
@@ -81,6 +81,11 @@ h2 .cnt{font:500 13px var(--body);color:var(--dim)}
 .gmid{text-align:center}
 .gmid .t{font:700 15px var(--display);letter-spacing:.05em;color:var(--chalk)}
 .gmid .w{color:var(--muted);font-size:11.5px}
+.pw{display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:4px;background:rgba(10,15,29,.45);border:1px solid var(--line2);border-radius:12px;padding:6px 14px}
+.pw>span:first-child{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brass)}
+.pw b{font:800 18px var(--display);letter-spacing:.02em;white-space:nowrap}
+.pw .sc{font:800 22px var(--display);line-height:1}
+.pw .w{font-size:11px;color:var(--muted)}
 .gbm{display:flex;flex-wrap:wrap;gap:6px 8px;padding:10px 18px;border-top:1px solid var(--line);background:var(--ink2)}
 .tag{font-size:11.5px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);padding:3px 8px;border-radius:7px;white-space:nowrap}
 .tag.g{color:var(--more);border-color:rgba(61,220,151,.3)}.tag.r{color:var(--less);border-color:rgba(255,111,111,.3)}.tag.y{color:var(--warn);border-color:rgba(255,209,102,.3)}
@@ -152,6 +157,8 @@ th:first-child,td:first-child,.l{text-align:left!important}
 .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
 .panel h3{margin:0 0 10px;font:700 18px var(--display);letter-spacing:.03em}
+tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{background:var(--brassbg)}
+.kpi.clk{cursor:pointer;transition:border-color .15s}.kpi.clk:hover{border-color:var(--brass)}
 .fx{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
 .fx:last-child{border:0}
 /* modal */
@@ -181,6 +188,7 @@ th:first-child,td:first-child,.l{text-align:left!important}
   .bnav button.on{color:var(--brass)}
   main{padding-bottom:80px}
   .grid{grid-template-columns:minmax(0,1fr)}
+  .pw{align-items:flex-start}
   .gbt{grid-template-columns:1fr;gap:8px;padding:12px 14px}.gtm.h{justify-content:flex-start;text-align:left}.gtm .pp{margin-left:auto}.gtm .n{font-size:20px}.gmid{text-align:left;order:3}
   .brand b{font-size:18px}.brand .mk{width:28px;height:28px;font-size:17px}.seg button{padding:6px 11px;font-size:14px}
   .mhead{min-height:140px}.mhead .hs{height:120px}.mhead .nm{font-size:26px}
@@ -268,9 +276,9 @@ function kpis() {
   const days = Object.values(sm.daily || {}).map(d => d.rec).filter(d => d[0] + d[1] > 0).map(d => d[0]/(d[0]+d[1]));
   const pe = sm.projErr || {}; let n = 0, within = 0;
   for (const [k, v] of Object.entries(pe)) if (k.startsWith(S.sport + "|")) { n += v[0]; within += v[3]; }
-  const card = (lab, r, extra="", sv="") => { const t = (r.w||0)+(r.l||0); return `<div class="kpi"><div class="l">${lab}</div><div class="v">${r.pct == null ? "—" : pct(r.pct,1)}</div><div class="s">${t ? `${r.w}-${r.l}${r.p ? "-"+r.p : ""}` : "no grades yet"}${extra}</div>${sv}</div>`; };
+  const card = (lab, r, extra="", sv="", key="all") => { const t = (r.w||0)+(r.l||0); return `<div class="kpi clk" role="button" tabindex="0" onclick="pickGroup('${key}','${lab}')" title="See these picks"><div class="l">${lab} ›</div><div class="v">${r.pct == null ? "—" : pct(r.pct,1)}</div><div class="s">${t ? `${r.w}-${r.l}${r.p ? "-"+r.p : ""}` : "no grades yet"}${extra}</div>${sv}</div>`; };
   const ks = aggr("rec|Kalshi");
-  $("#kpis").innerHTML = `<div class="kpis">${card("Best plays", all, "", spark(days.slice(-20)))}${card(S.sport, aggr("rec|"+S.sport))}${card("Locks", aggr("rec|tier|Lock"))}${card("Kalshi", ks, ks.roi != null ? ` · ROI ${ks.roi >= 0 ? "+" : ""}${pct(ks.roi,1)}` : "")}
+  $("#kpis").innerHTML = `<div class="kpis">${card("Best plays", all, "", spark(days.slice(-20)), "all")}${card(S.sport, aggr("rec|"+S.sport), "", "", S.sport)}${card("Pick6", aggr("rec|Pick6"), "", "", "Pick6")}${card("Locks", aggr("rec|tier|Lock"), "", "", "tier|Lock")}${card("Kalshi", ks, ks.roi != null ? ` · ROI ${ks.roi >= 0 ? "+" : ""}${pct(ks.roi,1)}` : "", "", "Kalshi")}
     <div class="kpi"><div class="l">Projection accuracy</div><div class="v">${n ? pct(within/n,0) : "—"}</div><div class="s">${n ? `stats within 25% · ${n.toLocaleString()} graded` : "after games finish"}</div></div></div>`;
 }
 
@@ -338,13 +346,19 @@ function restTag(g, ab) {
   const bits = [c.rest != null ? `${c.rest}d rest` : null, c.b2b ? "B2B" : null, c.road ? `road #${c.road}` : null, c.travel ? `${c.travel} mi` : null].filter(Boolean);
   return bits.length ? `<span class="tag ${c.b2b ? "r" : ""}">${esc(ab)}: ${bits.join(" · ")}</span>` : "";
 }
+function projWinner(g, long) {
+  const pr = g.proj || {}; if (pr.homePts == null) return "";
+  const homeWins = pr.homePts >= pr.awayPts, w = homeWins ? g.home : g.away, l = homeWins ? g.away : g.home;
+  const wp = homeWins ? pr.pHome : 1 - pr.pHome, ws = homeWins ? pr.homePts : pr.awayPts, ls = homeWins ? pr.awayPts : pr.homePts;
+  return `<div class="pw"><span>Projected winner</span><b>${logo(w.abbr, "", "width:20px;height:20px;vertical-align:-5px;margin-right:4px")}${esc(w.short)}</b><span class="num sc">${Math.round(ws)}–${Math.round(ls)}</span><span class="w">${pct(wp)} to win · total ${Math.round(pr.total)}${long ? ` · ${esc(l.short)} ${pct(1-wp)}` : ""}</span></div>`;
+}
 function gameBanner(g, withPicks=true) {
   const pr = g.proj || {};
   const gp = withPicks ? sp().gamePicks.filter(p => p.gameId === g.id && p.rec) : [];
   return `<div class="gb" style="--ca:${tc(g.away.abbr)}66;--ch:${tc(g.home.abbr)}66">
     <div class="gbt">
       <div class="gtm"><img src="${esc(g.away.logo)}" alt=""><div style="min-width:0"><div class="n">${esc(g.away.short)}</div><div class="r">${esc(g.away.record||"")} · Off #${g.stand?.away?.pfRank ?? "—"} · Def #${g.stand?.away?.paRank ?? "—"}</div></div><div class="pp">${fmt(pr.awayPts)}</div></div>
-      <div class="gmid"><div class="t">${when(g.start)}</div><div class="w">${pct(1-pr.pHome)} · ${pct(pr.pHome)}</div></div>
+      <div class="gmid"><div class="t">${when(g.start)}</div>${projWinner(g)}</div>
       <div class="gtm h"><img src="${esc(g.home.logo)}" alt=""><div style="min-width:0"><div class="n">${esc(g.home.short)}</div><div class="r">${esc(g.home.record||"")} · Off #${g.stand?.home?.pfRank ?? "—"} · Def #${g.stand?.home?.paRank ?? "—"}</div></div><div class="pp">${fmt(pr.homePts)}</div></div>
     </div>
     <div class="gbm">${wxTag(g)}${g.spreadTxt ? `<span class="tag">Vegas ${esc(g.spreadTxt)} · O/U ${fmt(g.ou)}</span>` : ""}${g.pace ? `<span class="tag">Pace ${fmt(g.pace.game)} poss</span>` : ""}${restTag(g, g.away.abbr)}${restTag(g, g.home.abbr)}${outLine(g, g.away.abbr)}${outLine(g, g.home.abbr)}
@@ -430,7 +444,7 @@ function openPlayer(pid) {
     <tbody>${rows.map(r => `<tr><td>${r[0].slice(5)}</td><td class="l">${r[1]} ${esc(r[2])}</td><td class="l ${r[3]==="W"?"w":r[3]==="L"?"lz":""}">${esc(r[3])} ${esc(r[4])}</td>${r.slice(5, 5+d.keys.length).map(v=>`<td>${v==null?"—":fmt(v)}</td>`).join("")}${extra?`<td>${r[5+d.keys.length]}</td>`:""}</tr>`).join("")}</tbody></table></div>`;
   $("#mbox").innerHTML = `<div class="mhead" style="--tc:${tc(pl.team)}">${logo(pl.team, "wm", "")}${headshot(pl)}
       <div class="info"><div class="nm">${esc(pl.name)}</div>
-      <div class="note" style="color:rgba(255,255,255,.85)">${esc(pl.team)} · ${esc((d&&d.bio.posName)||pl.pos)} · ${pl.home?"vs":"@"} ${esc(pl.opp)} · ${when(g.start)}</div>
+      <div class="note" style="color:rgba(255,255,255,.85)">${esc(pl.team)} · ${esc((d&&d.bio.posName)||pl.pos)} · ${pl.home?"vs":"@"} ${esc(pl.opp)} · ${when(g.start)}${g.proj ? ` · Projected ${esc(g.away.abbr)} ${Math.round(g.proj.awayPts)}–${Math.round(g.proj.homePts)} ${esc(g.home.abbr)}` : ""}</div>
       <div class="chips" style="margin-top:8px">${bio}${pl.inj ? `<span class="badge b-inj">${esc(pl.inj)}${d&&d.bio.injDetail?" · "+esc(d.bio.injDetail):""}</span>` : ""}${pl.grade ? `<span class="tag" style="background:rgba(10,15,29,.45)"><span class="grade" style="background:${GRADE_C[pl.grade]}22;color:${GRADE_C[pl.grade]}">${pl.grade}</span>matchup</span>` : ""}</div></div>
       <button class="x" onclick="closeModal()" aria-label="Close">✕</button></div>
     <div class="mbody">
@@ -477,7 +491,7 @@ function renderGames() {
     return gameBanner(g, false).replace(/<\/div>$/, "") + `
       <div class="wpb"><div style="width:${(1-pr.pHome)*100}%;background:${ac}"></div><div style="flex:1;background:${hc}"></div></div>
       <div class="wpl"><span>${esc(g.away.abbr)} ${pct(1-pr.pHome)} to win</span><span>${esc(g.home.abbr)} ${pct(pr.pHome)} to win</span></div>
-      <dl class="kv"><dt>Spread</dt><dd>Vegas ${esc(g.spreadTxt||"—")} · model ${pr.modelMargin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.modelMargin))} · blended ${pr.margin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.margin))}</dd>
+      <dl class="kv"><dt>Projected</dt><dd><b>${pr.homePts >= pr.awayPts ? esc(g.home.short) : esc(g.away.short)} win</b>, ${esc(g.away.abbr)} ${fmt(pr.awayPts)} – ${esc(g.home.abbr)} ${fmt(pr.homePts)} (total ${fmt(pr.total)})</dd><dt>Spread</dt><dd>Vegas ${esc(g.spreadTxt||"—")} · model ${pr.modelMargin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.modelMargin))} · blended ${pr.margin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.margin))}</dd>
         <dt>Total</dt><dd>Vegas ${fmt(g.ou)} · model ${fmt(pr.modelTotal)} · blended ${fmt(pr.total)}</dd>
         ${g.pace ? `<dt>Pace</dt><dd>${esc(g.away.abbr)} ${fmt(g.pace[g.away.abbr]?.pace)} (#${g.pace[g.away.abbr]?.rank}) · ${esc(g.home.abbr)} ${fmt(g.pace[g.home.abbr]?.pace)} (#${g.pace[g.home.abbr]?.rank}) possessions</dd>` : ""}
         ${(pr.notes||[]).length ? `<dt>Notes</dt><dd>${pr.notes.map(esc).join(" · ")}</dd>` : ""}</dl>
@@ -488,29 +502,93 @@ function renderGames() {
 }
 
 // ---------------- accuracy ----------------
+let T = null, tLoading = false;
+let G = {key: null, mode: "rec", res: "all"};   // selected accuracy group
+const CONF = p => p >= .70 ? "70+" : p >= .65 ? "65-70" : p >= .60 ? "60-65" : p >= .55 ? "55-60" : "50-55";
+const LBL_KEY = Object.fromEntries(Object.entries(LBL).map(([k, v]) => [v, k]));
+function gradedRows() {
+  const raw = (T && T.recent) || ((B.summary || {}).recent) || [];
+  return raw.map(r => {
+    const o = {s:r[0], pf:r[1], nm:r[2], stat:r[3], line:r[4], side:r[5], prob:r[6], val:r[7], res:r[8], date:r[9], rec:!!r[10], price:r[11], key:r[12], type:r[13], tier:r[14]};
+    if (!o.type) { const st = (o.stat || "").toLowerCase(); o.type = st.endsWith(" to win") ? "ml" : st.includes(" wins by ") ? "spread" : st.startsWith("total over") ? "total" : "prop"; }
+    if (!o.key) o.key = o.type !== "prop" ? o.type : (LBL_KEY[o.stat] || o.stat);
+    if (o.tier === undefined && o.rec) o.tier = o.pf === "Pick6" ? (o.prob >= .68 ? "Lock" : o.prob >= .62 ? "Strong" : "Lean")
+      : o.price ? (o.prob - o.price >= .10 ? "Lock" : o.prob - o.price >= .07 ? "Strong" : "Lean") : null;
+    return o;
+  });
+}
+function inGroup(key, r) {
+  if (!key || key === "all") return true;
+  const [a, b, c] = key.split("|");
+  if (a === "tier") return r.tier === b;
+  if (a === "type") return r.type === b;
+  if (a === "conf") return CONF(r.prob) === b;
+  if (a === "stat") return r.s === b && (r.key === c || (LBL[c] && r.stat === LBL[c]));
+  if (a === "day") return r.date === b;
+  if (b) return r.s === a && r.pf === b;
+  return r.s === a || r.pf === a;
+}
+async function pickGroup(key, label, mode) {
+  G = {key, label, mode: mode || "rec", res: "all"};
+  if (S.tab !== "acc") { S.tab = "acc"; }
+  render();
+  if (!T && !tLoading) {
+    tLoading = true;
+    try { T = await (await fetch("data/track.json?t=" + Date.now())).json(); } catch (e) { T = null; }
+    tLoading = false;
+    if (S.tab === "acc") render();
+  }
+  const el = document.getElementById("grp"); if (el) el.scrollIntoView({behavior:"smooth", block:"start"});
+}
+function groupPanel() {
+  if (!G.key) return "";
+  const all = gradedRows().filter(r => inGroup(G.key, r));
+  const pool = G.mode === "rec" ? all.filter(r => r.rec) : all;
+  const w = pool.filter(r => r.res === "w").length, l = pool.filter(r => r.res === "l").length;
+  const rows = pool.filter(r => G.res === "all" || r.res === G.res).slice().reverse();
+  const agg = aggr((G.mode === "rec" ? "rec|" : "lean|") + G.key);
+  const capped = (agg.w || 0) + (agg.l || 0) > w + l;
+  const chip = (on, txt, js) => `<button class="chip ${on ? "on" : ""}" onclick="${js};render()">${txt}</button>`;
+  return `<div class="panel" id="grp" style="margin-top:16px;border-color:var(--brass)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <h3 style="margin:0">${esc(G.label)} <span class="note" style="font:500 13px var(--body)">${w}-${l}${w + l ? ` · ${pct(w/(w+l),1)} hit` : ""}</span></h3>
+      <button class="chip" onclick="G.key=null;render()">Close ✕</button></div>
+    <div class="filters" style="margin:10px 0">
+      ${chip(G.mode === "rec", "Best plays", "G.mode='rec'")}${chip(G.mode === "all", "All leans", "G.mode='all'")}<span class="sep"></span>
+      ${chip(G.res === "all", "All results", "G.res='all'")}${chip(G.res === "w", "✓ Hits", "G.res='w'")}${chip(G.res === "l", "✗ Misses", "G.res='l'")}
+    </div>
+    ${tLoading && !T ? `<div class="note">Loading graded picks…</div>` : rows.length ? `<div class="tbl" style="max-height:560px"><table><thead><tr><th class="l">Date</th><th class="l">Sport</th><th class="l">Platform</th><th class="l">Pick</th><th>Line</th><th class="l">Side</th><th>Conf</th><th>Price</th><th>Actual</th><th class="l">Tier</th><th class="l">Result</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="l">${esc(r.date.slice(5))}</td><td class="l">${r.s}</td><td class="l"><span class="badge ${r.pf==="Pick6"?"b-p6":"b-ks"}">${r.pf.toUpperCase()}</span></td><td class="l">${esc(r.nm)} · ${esc(r.stat)}</td><td>${r.line==null?"—":fmt(r.line)}</td><td class="l ${isOver(r.side)?"up":"dn"}"><b>${r.side}</b></td><td>${pct(r.prob)}</td><td>${r.price?Math.round(r.price*100)+"¢":"—"}</td><td><b>${r.val==null?"—":fmt(r.val)}</b></td><td class="l">${r.tier?`<span class="tier ${r.tier}" style="font-size:9.5px;padding:1px 6px">${r.tier}</span>`:""}</td><td class="l ${r.res==="w"?"w":r.res==="l"?"lz":""}">${{w:"✓ Hit",l:"✗ Miss",push:"Push",void:"Void"}[r.res]}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="empty">No graded picks in this group${G.res !== "all" ? " for this filter" : ""}.</div>`}
+    ${capped ? `<p class="note" style="margin-top:8px">The record above counts every graded pick. The list shows the ones kept pick by pick; the first night's full list wasn't saved, and every pick is kept from now on.</p>` : ""}
+  </div>`;
+}
 function bar(v) { return `<div class="mini" style="min-width:80px"><b style="width:${Math.max(0,Math.min(100,v*100))}%;background:${v >= .5 ? "var(--more)" : "var(--less)"}"></b></div>`; }
 function aggRows(prefix, keys, label) {
-  return keys.map(k => [label(k), aggr("rec|"+prefix+k), aggr("lean|"+prefix+k)]).filter(r => (r[1].w||0)+(r[1].l||0)+(r[2].w||0)+(r[2].l||0) > 0)
-    .map(([n, r, l]) => `<tr><td class="l">${esc(n)}</td><td>${r.w||0}-${r.l||0}</td><td>${pct(r.pct,1)}</td><td>${bar(r.pct||0)}</td><td>${r.roi!=null?(r.roi>=0?"+":"")+pct(r.roi,1):"—"}</td><td>${l.w||0}-${l.l||0}</td><td>${pct(l.pct,1)}</td></tr>`).join("");
+  return keys.map(k => [k, label(k), aggr("rec|"+prefix+k), aggr("lean|"+prefix+k)]).filter(r => (r[2].w||0)+(r[2].l||0)+(r[3].w||0)+(r[3].l||0) > 0)
+    .map(([k, n, r, l]) => { const key = prefix + k, on = G.key === key;
+      return `<tr class="clk${on ? " sel" : ""}" onclick="pickGroup('${esc(key)}','${esc(n).replace(/'/g, "")}')" title="Show these picks"><td class="l">${esc(n)} <span class="note">›</span></td><td>${r.w||0}-${r.l||0}</td><td>${pct(r.pct,1)}</td><td>${bar(r.pct||0)}</td><td>${r.roi!=null?(r.roi>=0?"+":"")+pct(r.roi,1):"—"}</td><td>${(l.w||0)+(l.l||0) ? `<a href="javascript:void 0" onclick="event.stopPropagation();pickGroup('${esc(key)}','${esc(n).replace(/'/g, "")}','all')">${l.w||0}-${l.l||0}</a>` : "—"}</td><td>${pct(l.pct,1)}</td></tr>`; }).join("");
 }
 function renderAcc() {
   const sm = B.summary || {};
   const days = Object.entries(sm.daily || {}).slice(-30);
   const W = 640, H = 160, bw = days.length ? W / days.length : W;
-  const chart = days.length ? `<svg viewBox="0 0 ${W} ${H+22}" width="100%" role="img" aria-label="Daily hit rate">
+  const chart = days.length ? `<svg viewBox="0 0 ${W} ${H+22}" width="100%" role="img" aria-label="Daily hit rate, tap a day to see its picks">
     <line x1="0" x2="${W}" y1="${H/2}" y2="${H/2}" stroke="var(--line2)" stroke-dasharray="4 4"/><text x="4" y="${H/2-5}" fill="var(--dim)" font-size="10">50%</text>
     ${days.map(([d, v], i) => { const [w, l] = v.rec, n = w + l, p = n ? w/n : 0, h = p * H;
-      return `<rect x="${i*bw+3}" y="${H-h}" width="${Math.max(bw-6,2)}" height="${h}" rx="3" fill="${p>=.5?"var(--more)":"var(--less)"}" opacity=".85"><title>${d}: ${w}-${l}</title></rect>${i % Math.ceil(days.length/8) === 0 ? `<text x="${i*bw+bw/2}" y="${H+15}" text-anchor="middle" fill="var(--dim)" font-size="10">${d.slice(5)}</text>` : ""}`; }).join("")}
+      return `<g style="cursor:pointer" onclick="pickGroup('day|${d}','${d}')"><rect x="${i*bw}" y="0" width="${bw}" height="${H}" fill="transparent"/><rect x="${i*bw+3}" y="${H-h}" width="${Math.max(bw-6,2)}" height="${h}" rx="3" fill="${p>=.5?"var(--more)":"var(--less)"}" opacity="${G.key === "day|" + d ? 1 : .8}"><title>${d}: ${w}-${l}</title></rect></g>${i % Math.ceil(days.length/8) === 0 ? `<text x="${i*bw+bw/2}" y="${H+15}" text-anchor="middle" fill="var(--dim)" font-size="10">${d.slice(5)}</text>` : ""}`; }).join("")}
   </svg>` : `<div class="empty">Fills in after the first games are graded.</div>`;
   const bins = ["50-55","55-60","60-65","65-70","70+"].map(b => [b, (sm.bins||{})[b]]).filter(x => x[1]);
   const statKeys = Object.keys(sm.agg||{}).filter(k => k.startsWith("lean|stat|" + S.sport + "|")).map(k => k.split("|")[3]);
   const pe = Object.entries(sm.projErr||{}).filter(([k]) => k.startsWith(S.sport+"|")).sort((a,b)=>b[1][0]-a[1][0]);
   const learned = Object.entries(sm.calib||{}).filter(([k]) => k.startsWith(S.sport));
+  const recent = gradedRows().slice(-250).reverse();
   $("#v-acc").innerHTML = `
-    <p class="note" style="margin-top:16px">Every pick and projection is saved before the game, then graded against the final box score. Tracking since ${esc(sm.since||"today")} · ${(sm.pending||0).toLocaleString()} waiting on results.</p>
-    <div class="two"><div class="panel"><h3>Daily hit rate · best plays</h3>${chart}</div>
-      <div class="panel"><h3>Calibration: does 60% mean 60%?</h3>${bins.length ? `<div class="tbl"><table><thead><tr><th class="l">Model said</th><th>Picks</th><th>Hit</th><th></th></tr></thead><tbody>${bins.map(([b,[n,h]])=>`<tr><td class="l">${b}%</td><td>${n}</td><td>${pct(h/n,1)}</td><td>${bar(h/n)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Fills in after games are graded.</div>`}</div></div>
-    <h2>Record</h2>
+    <p class="note" style="margin-top:16px">Every pick and projection is saved before the game, then graded against the final box score. Tracking since ${esc(sm.since||"today")} · ${(sm.pending||0).toLocaleString()} waiting on results. <b style="color:var(--chalk)">Tap any row, tile or day to see exactly which picks hit and missed.</b></p>
+    ${groupPanel()}
+    <div class="two" style="margin-top:14px"><div class="panel"><h3>Daily hit rate · best plays</h3>${chart}</div>
+      <div class="panel"><h3>Calibration: does 60% mean 60%?</h3>${bins.length ? `<div class="tbl"><table><thead><tr><th class="l">Model said</th><th>Picks</th><th>Hit</th><th></th></tr></thead><tbody>${bins.map(([b,[n,h]])=>`<tr class="clk${G.key==="conf|"+b?" sel":""}" onclick="pickGroup('conf|${b}','Model said ${b}%','all')"><td class="l">${b}% <span class="note">›</span></td><td>${n}</td><td>${pct(h/n,1)}</td><td>${bar(h/n)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Fills in after games are graded.</div>`}</div></div>
+    <h2>Record <span class="cnt">tap a row for its picks · tap the "All leans" record for every lean</span></h2>
     <div class="tbl"><table><thead><tr><th class="l">Group</th><th>Best plays</th><th>Hit %</th><th></th><th>Kalshi ROI</th><th>All leans</th><th>Hit %</th></tr></thead><tbody>
       ${aggRows("", ["all","NFL","NBA","Pick6","Kalshi","NFL|Pick6","NFL|Kalshi","NBA|Pick6","NBA|Kalshi"], k => k === "all" ? "Everything" : k.replace("|"," · "))}
       ${aggRows("tier|", ["Lock","Strong","Lean"], k => k + " tier")}
@@ -522,9 +600,9 @@ function renderAcc() {
     <h2>${S.sport} projection error <span class="cnt">projected stat line vs what happened</span></h2>
     ${pe.length ? `<div class="tbl"><table><thead><tr><th class="l">Stat</th><th>Graded</th><th>Avg miss</th><th>Avg actual</th><th>Within 25%</th><th></th></tr></thead><tbody>${pe.map(([k,[n,ae,act,w]])=>`<tr><td class="l">${LBL[k.split("|")[1]]||k}</td><td>${n}</td><td>±${fmt(ae/n)}</td><td>${fmt(act/n)}</td><td>${pct(w/n,0)}</td><td>${bar(w/n)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Fills in after games are graded.</div>`}
     ${learned.length ? `<h2>What the model has learned</h2><p class="note">For each stat it compares how confident it was with how often it was right, then scales future confidence (1.00 = full trust, lower = pulled toward 50/50).</p><div class="chips">${learned.map(([k,v])=>`<span class="tag ${v>=.85?"g":"r"}">${LBL[k.split("|")[1]]||k}: ${v.toFixed(2)}</span>`).join("")}</div>` : ""}
-    <h2>Recently graded <span class="cnt">${(sm.recent||[]).length}</span></h2>
-    ${(sm.recent||[]).length ? `<div class="tbl" style="max-height:520px"><table><thead><tr><th class="l">Date</th><th class="l">Sport</th><th class="l">Platform</th><th class="l">Pick</th><th>Line</th><th class="l">Side</th><th>Conf</th><th>Actual</th><th class="l">Result</th></tr></thead><tbody>
-      ${(sm.recent||[]).slice().reverse().map(r=>`<tr><td class="l">${r[9].slice(5)}</td><td class="l">${r[0]}</td><td class="l"><span class="badge ${r[1]==="Pick6"?"b-p6":"b-ks"}">${r[1].toUpperCase()}</span>${r[10]?" ★":""}</td><td class="l">${esc(r[2])} · ${esc(r[3])}</td><td>${r[4]==null?"—":fmt(r[4])}</td><td class="l">${r[5]}</td><td>${pct(r[6])}</td><td>${r[7]==null?"—":fmt(r[7])}</td><td class="l ${r[8]==="w"?"w":r[8]==="l"?"lz":""}">${{w:"✓ Hit",l:"✗ Miss",push:"Push",void:"Void"}[r[8]]}</td></tr>`).join("")}
+    <h2>Recently graded <span class="cnt">${recent.length}</span></h2>
+    ${recent.length ? `<div class="tbl" style="max-height:520px"><table><thead><tr><th class="l">Date</th><th class="l">Sport</th><th class="l">Platform</th><th class="l">Pick</th><th>Line</th><th class="l">Side</th><th>Conf</th><th>Actual</th><th class="l">Result</th></tr></thead><tbody>
+      ${recent.map(r=>`<tr><td class="l">${esc(r.date.slice(5))}</td><td class="l">${r.s}</td><td class="l"><span class="badge ${r.pf==="Pick6"?"b-p6":"b-ks"}">${r.pf.toUpperCase()}</span>${r.rec?" ★":""}</td><td class="l">${esc(r.nm)} · ${esc(r.stat)}</td><td>${r.line==null?"—":fmt(r.line)}</td><td class="l">${r.side}</td><td>${pct(r.prob)}</td><td>${r.val==null?"—":fmt(r.val)}</td><td class="l ${r.res==="w"?"w":r.res==="l"?"lz":""}">${{w:"✓ Hit",l:"✗ Miss",push:"Push",void:"Void"}[r.res]}</td></tr>`).join("")}
     </tbody></table></div>` : `<div class="empty">No picks graded yet. Results appear a few hours after each game ends.</div>`}`;
 }
 
