@@ -25,7 +25,7 @@ NFL + NBA picks for **Kalshi** and **DraftKings Pick6**, with a full projected s
 - Files: `extras.py` holds the new context features.
 
 ## How it updates
-`.github/workflows/update.yml` runs `run.py` every 2 hours, plus hourly from 15:00–23:00 UTC before US game times. You can also run it any time with **Actions → Update board → Run workflow**. The site is published with GitHub Pages (Settings → Pages → Source: **GitHub Actions**). The accuracy history is carried from run to run by reading the last published `data/track.json`.
+`.github/workflows/update.yml` runs `run.py` every 30 minutes. You can also run it any time with **Actions → Update board → Run workflow**. The site is published with GitHub Pages (Settings → Pages → Source: **GitHub Actions**). The accuracy history is carried from run to run by reading the last published `data/track.json`.
 
 No API keys, no cost.
 
