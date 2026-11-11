@@ -89,6 +89,7 @@ h2 .cnt{font:500 13px var(--body);color:var(--dim)}
 .pw .sc{font:800 22px var(--display);line-height:1}
 .pw .w{font-size:11px;color:var(--muted)}
 .pw .tot{font-size:11.5px;color:var(--chalk);margin-top:2px}.pw .tot b{font:800 16px var(--display);color:var(--brass)}
+.pw .gg{display:flex;align-items:center;gap:2px;margin-top:4px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.pw .gg .grade{width:20px;height:20px;font-size:13px}
 .gbm{display:flex;flex-wrap:wrap;gap:6px 8px;padding:10px 18px;border-top:1px solid var(--line);background:var(--ink2)}
 .tag{font-size:11.5px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);padding:3px 8px;border-radius:7px;white-space:nowrap}
 .tag.g{color:var(--more);border-color:rgba(61,220,151,.3)}.tag.r{color:var(--less);border-color:rgba(255,111,111,.3)}.tag.y{color:var(--warn);border-color:rgba(255,209,102,.3)}
@@ -350,11 +351,51 @@ function restTag(g, ab) {
   const bits = [c.rest != null ? `${c.rest}d rest` : null, c.b2b ? "B2B" : null, c.road ? `road #${c.road}` : null, c.travel ? `${c.travel} mi` : null].filter(Boolean);
   return bits.length ? `<span class="tag ${c.b2b ? "r" : ""}">${esc(ab)}: ${bits.join(" · ")}</span>` : "";
 }
+// Game sureness grade: how confident the model is in the projected winner and final score
+function gameGrade(g) {
+  const pr = g.proj || {}; if (pr.pHome == null) return null;
+  const nfl = g.sport === "NFL", why = [];
+  const wp = Math.max(pr.pHome, 1 - pr.pHome);
+  let s = Math.min(1, Math.max(0, wp - .5) / .25) * 45;           // 75%+ favorite = full marks
+  if (wp >= .75) why.push(`clear favorite (${pct(wp)})`); else if (wp < .6) why.push(`close to a coin flip (${pct(wp)})`);
+  const mScale = nfl ? 7 : 10, tScale = nfl ? 7 : 12;
+  if (pr.vegasMargin != null && pr.modelMargin != null) {
+    const same = Math.sign(pr.modelMargin) === Math.sign(pr.vegasMargin) || Math.abs(pr.vegasMargin) < .5;
+    const d = Math.abs(pr.modelMargin - pr.vegasMargin);
+    if (same) s += 25 * Math.max(0, 1 - d / mScale);
+    if (!same) why.push("model and Vegas pick different winners");
+    else if (d <= mScale * .25) why.push("model agrees with the Vegas spread");
+    else if (d >= mScale * .6) why.push(`model ${fmt(d)} pts off the Vegas spread`);
+  } else { s += 14; why.push("Vegas line not posted yet"); }
+  if (g.ou && pr.modelTotal != null) {
+    const d = Math.abs(pr.modelTotal - g.ou); s += 15 * Math.max(0, 1 - d / tScale);
+    if (d >= tScale * .6) why.push(`total ${fmt(d)} pts off Vegas`);
+  } else s += 8;
+  const n = t => (t?.w ?? 0) + (t?.l ?? 0), gp = Math.min(n(g.stand?.home), n(g.stand?.away));
+  s += 15 * Math.min(1, gp / (nfl ? 8 : 20));
+  if (gp < (nfl ? 4 : 8)) why.push("small early-season sample");
+  const w = g.weather;
+  if (nfl && w && !(g.venue || {}).indoor && ((w.wind || 0) >= 15 || (w.rainPct || 0) >= 60)) { s -= 8; why.push("weather adds variance"); }
+  const b2b = [g.away.abbr, g.home.abbr].filter(a => g.ctx?.[a]?.b2b);
+  if (b2b.length) { s -= 3; why.push(`${b2b.join(" & ")} on a back-to-back`); }
+  const outs = [g.away.abbr, g.home.abbr].reduce((k, a) => k + ((g.out || {})[a] || []).length, 0);
+  if (outs >= 6) { s -= 5; why.push(`${outs} players out`); }
+  s = Math.max(0, Math.min(100, Math.round(s)));
+  let gr = s >= 70 ? "A" : s >= 56 ? "B" : s >= 42 ? "C" : "D";
+  // an A needs Vegas to back the model up
+  if (gr === "A" && (pr.vegasMargin == null || Math.abs(pr.modelMargin - pr.vegasMargin) >= mScale * .6)) gr = "B";
+  if (!why.length) why.push("no red flags");
+  return {gr, s, label: {A:"Strong", B:"Solid", C:"Shaky", D:"Toss-up"}[gr], why: why.slice(0, 3)};
+}
 function projWinner(g, long) {
   const pr = g.proj || {}; if (pr.homePts == null) return "";
   const homeWins = pr.homePts >= pr.awayPts, w = homeWins ? g.home : g.away, l = homeWins ? g.away : g.home;
   const wp = homeWins ? pr.pHome : 1 - pr.pHome, ws = homeWins ? pr.homePts : pr.awayPts, ls = homeWins ? pr.awayPts : pr.homePts;
-  return `<div class="pw"><span>Projected winner</span><b>${logo(w.abbr, "", "width:20px;height:20px;vertical-align:-5px;margin-right:4px")}${esc(w.short)}</b><span class="num sc">${Math.round(ws)}–${Math.round(ls)}</span><span class="w">${pct(wp)} to win</span><span class="tot">Total <b>${fmt(pr.total)}</b> pts${g.ou ? ` · Vegas ${fmt(g.ou)}` : ""}</span></div>`;
+  return `<div class="pw"><span>Projected winner</span><b>${logo(w.abbr, "", "width:20px;height:20px;vertical-align:-5px;margin-right:4px")}${esc(w.short)}</b><span class="num sc">${Math.round(ws)}–${Math.round(ls)}</span><span class="w">${pct(wp)} to win</span><span class="tot">Total <b>${fmt(pr.total)}</b> pts${g.ou ? ` · Vegas ${fmt(g.ou)}` : ""}</span>${gradeBadge(g)}</div>`;
+}
+function gradeBadge(g) {
+  const q = gameGrade(g); if (!q) return "";
+  return `<span class="gg" title="Sureness ${q.s}/100: ${esc(q.why.join(", "))}"><span class="grade" style="background:${GRADE_C[q.gr]}22;color:${GRADE_C[q.gr]}">${q.gr}</span><span style="color:${GRADE_C[q.gr]}">${q.label}</span></span>`;
 }
 function gameBanner(g, withPicks=true) {
   const pr = g.proj || {};
@@ -495,7 +536,7 @@ function renderGames() {
     return gameBanner(g, false).replace(/<\/div>$/, "") + `
       <div class="wpb"><div style="width:${(1-pr.pHome)*100}%;background:${ac}"></div><div style="flex:1;background:${hc}"></div></div>
       <div class="wpl"><span>${esc(g.away.abbr)} ${pct(1-pr.pHome)} to win</span><span>${esc(g.home.abbr)} ${pct(pr.pHome)} to win</span></div>
-      <dl class="kv"><dt>Projected</dt><dd><b>${pr.homePts >= pr.awayPts ? esc(g.home.short) : esc(g.away.short)} win</b>, ${esc(g.away.abbr)} ${fmt(pr.awayPts)} – ${esc(g.home.abbr)} ${fmt(pr.homePts)}</dd><dt>Total points</dt><dd><b>${fmt(pr.total)}</b> combined${g.ou ? ` (Vegas O/U ${fmt(g.ou)}, model alone ${fmt(pr.modelTotal)})` : ""}</dd><dt>Spread</dt><dd>Vegas ${esc(g.spreadTxt||"—")} · model ${pr.modelMargin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.modelMargin))} · blended ${pr.margin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.margin))}</dd>
+      <dl class="kv">${(q => q ? `<dt>Sureness</dt><dd><span class="grade" style="background:${GRADE_C[q.gr]}22;color:${GRADE_C[q.gr]}">${q.gr}</span><b style="color:${GRADE_C[q.gr]}">${q.label}</b> · ${q.s}/100 · ${esc(q.why.join(" · "))}</dd>` : "")(gameGrade(g))}<dt>Projected</dt><dd><b>${pr.homePts >= pr.awayPts ? esc(g.home.short) : esc(g.away.short)} win</b>, ${esc(g.away.abbr)} ${fmt(pr.awayPts)} – ${esc(g.home.abbr)} ${fmt(pr.homePts)}</dd><dt>Total points</dt><dd><b>${fmt(pr.total)}</b> combined${g.ou ? ` (Vegas O/U ${fmt(g.ou)}, model alone ${fmt(pr.modelTotal)})` : ""}</dd><dt>Spread</dt><dd>Vegas ${esc(g.spreadTxt||"—")} · model ${pr.modelMargin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.modelMargin))} · blended ${pr.margin>=0?esc(g.home.abbr):esc(g.away.abbr)} by ${fmt(Math.abs(pr.margin))}</dd>
         <dt>Total</dt><dd>Vegas ${fmt(g.ou)} · model ${fmt(pr.modelTotal)} · blended ${fmt(pr.total)}</dd>
         ${g.pace ? `<dt>Pace</dt><dd>${esc(g.away.abbr)} ${fmt(g.pace[g.away.abbr]?.pace)} (#${g.pace[g.away.abbr]?.rank}) · ${esc(g.home.abbr)} ${fmt(g.pace[g.home.abbr]?.pace)} (#${g.pace[g.home.abbr]?.rank}) possessions</dd>` : ""}
         ${(pr.notes||[]).length ? `<dt>Notes</dt><dd>${pr.notes.map(esc).join(" · ")}</dd>` : ""}</dl>
@@ -625,6 +666,7 @@ function renderHow() {
     <p class="note"><b>Kalshi:</b> the model is blended 40/60 with the market price, and a best play has to beat the price by 5¢ (4¢ for game markets). Only the best rung on each ladder counts.</p>
     ${fx([["Lock","Pick6 68%+ · Kalshi edge 10¢+"],["Strong","Pick6 62%+ · Kalshi edge 7¢+"],["Lean","any other best play"]])}
     <p class="note" style="margin-top:10px"><b>Matchup grade (A–F)</b> rolls every adjustment for that stat into one letter: A means the setup lifts him 7%+, F means it costs him 7%+. <b>Streak</b> counts straight games over or under the line. <b>Line movement</b> shows how far a Pick6 line or Kalshi price has moved since this board first saw it, and whether it moved toward our side.</p>
+    <p class="note"><b>Game sureness (A–D)</b> grades how much to trust each projected winner and final score, out of 100: how big the favorite is (45), whether the model agrees with the Vegas spread (25) and total (15), and how many games both teams have played (15), minus points for bad weather, back-to-backs and long injury lists. A = Strong (70+, and Vegas must back it up), B = Solid, C = Shaky, D = Toss-up. It's a guide to how sure the model is, not a track record yet.</p>
     <h3 style="margin-top:14px">Self-checking</h3>
     <p class="note">Every pick and projected stat is saved before the game and graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
     <h3 style="margin-top:14px">Version history</h3>
