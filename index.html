@@ -663,6 +663,29 @@ let qt; $("#q").addEventListener("input", e => { clearTimeout(qt); qt = setTimeo
   render();
   try { P = await (await fetch("data/players.json?t=" + Date.now())).json(); } catch (e) { P = {}; }
 })();
+// Auto-refresh: check for new data every 5 minutes, and whenever the tab comes back into view,
+// so a tab left open never shows stale games, records or grades.
+async function refreshBoard() {
+  try {
+    const nb = await (await fetch("data/board.json?t=" + Date.now(), {cache: "no-store"})).json();
+    if (!nb || !nb.sports || !B || nb.updated === B.updated) return;
+    B = nb;
+    if (!B.sports[S.sport]) S.sport = Object.keys(B.sports)[0] || "NBA";
+    const stamp = t => new Date(t).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
+    $("#updG").innerHTML = `Games &amp; lines <b>${stamp(B.updated)}</b>`;
+    const ga = (B.summary || {}).gradedAt;
+    const lastDay = ((B.summary || {}).recent || []).map(r => r[9]).sort().pop();
+    $("#updR").innerHTML = ga ? `Grades <b>${stamp(ga)}</b>` : lastDay ? `Grades <b>through ${new Date(lastDay + "T12:00:00").toLocaleDateString([], {month:"short", day:"numeric"})} games</b>` : `Grades <b>waiting on first finals</b>`;
+    if (B.version) $("#ver").textContent = "V" + B.version;
+    try { P = await (await fetch("data/players.json?t=" + Date.now(), {cache: "no-store"})).json(); } catch (e) {}
+    if (T) { try { T = await (await fetch("data/track.json?t=" + Date.now(), {cache: "no-store"})).json(); } catch (e) {} }
+    const y = window.scrollY; render(); window.scrollTo({top: y});
+  } catch (e) {}
+}
+let lastCheck = Date.now();
+const checkNow = () => { lastCheck = Date.now(); refreshBoard(); };
+setInterval(() => { if (!document.hidden) checkNow(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastCheck > 60 * 1000) checkNow(); });
 </script>
 </body>
 </html>
