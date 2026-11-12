@@ -169,6 +169,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 .tw .tr.win{color:var(--chalk)}.tw .tr.win .nm{font-weight:800}.tw .tr .sc{font:800 18px var(--display)}.tw .tr .wp{font:700 13px var(--body);min-width:38px;text-align:right}
 .tw .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tw .ft{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;font-size:11.5px;color:var(--dim)}
 .tw .wpb{margin:6px 0 0;height:6px}
+.tw.top{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}.tw .hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .bet{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;min-width:0}
 .bet.cash{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}.bet.lost{opacity:.6}
 .bet .bh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.bet .bh .ttl{font:800 18px var(--display);letter-spacing:.02em;flex:1;min-width:180px}
@@ -465,24 +466,43 @@ function renderPicks() {
 }
 
 // ---------------- projections view ----------------
+// Winner pick grade: sureness of the projection plus the price Kalshi charges for that team
+function winnerPick(g) {
+  const q = gameGrade(g); if (!q) return null;
+  const hw = g.proj.homePts >= g.proj.awayPts, w = hw ? g.home : g.away;
+  const mk = sp().gamePicks.find(p => p.gameId === g.id && p.type === "ml" && (p.label || "").toLowerCase() === (w.short + " to win").toLowerCase());
+  let score = q.s, price = null, edge = null;
+  if (mk && mk.yesAsk) {
+    const pYes = (mk.side || "YES").toUpperCase() === "YES" ? mk.prob : 1 - mk.prob;
+    price = mk.yesAsk; edge = pYes - price;
+    score += Math.max(-15, Math.min(15, edge * 150));
+  }
+  score = Math.round(Math.max(0, Math.min(100, score)));
+  const gr = score >= 72 ? "A" : score >= 58 ? "B" : score >= 44 ? "C" : "D";
+  return {gr, score, label: {A:"Best look", B:"Good look", C:"Meh", D:"Pass"}[gr], team: w, price, edge, sure: q};
+}
 function teamWinners(q) {
   const s = sp();
   let gs = s.games.filter(g => g.proj && g.proj.pHome != null && (S.game === "all" || g.id === S.game) &&
     (!q || [g.home.short, g.home.name, g.home.abbr, g.away.short, g.away.name, g.away.abbr].join(" ").toLowerCase().includes(q)));
   if (!gs.length) return "";
-  if (S.wsort === "sure") gs = gs.slice().sort((a, b) => (gameGrade(b)?.s ?? 0) - (gameGrade(a)?.s ?? 0));
+  const wsort = S.wsort || "best";
+  if (wsort === "best") gs = gs.slice().sort((a, b) => (winnerPick(b)?.score ?? 0) - (winnerPick(a)?.score ?? 0));
+  else if (S.wsort === "sure") gs = gs.slice().sort((a, b) => (gameGrade(b)?.s ?? 0) - (gameGrade(a)?.s ?? 0));
   else if (S.wsort === "fav") gs = gs.slice().sort((a, b) => Math.abs(b.proj.pHome - .5) - Math.abs(a.proj.pHome - .5));
   const row = (g, side) => { const t = g[side], p = side === "home" ? g.proj.pHome : 1 - g.proj.pHome, pts = side === "home" ? g.proj.homePts : g.proj.awayPts;
     const won = side === "home" ? g.proj.homePts >= g.proj.awayPts : g.proj.awayPts > g.proj.homePts;
     return `<div class="tr ${won ? "win" : ""}"><img src="${esc(t.logo)}" alt=""><span class="nm">${esc(t.short)} <small style="color:var(--dim);font-weight:500">${esc(t.record || "")}</small></span><span class="sc">${Math.round(pts)}</span><span class="wp" style="color:${won ? "var(--more)" : "var(--dim)"}">${pct(p)}</span></div>`; };
-  const sel = (v, l) => `<option value="${v}" ${(S.wsort || "time") === v ? "selected" : ""}>${l}</option>`;
-  return `<h2>Team winners <span class="cnt">${gs.length} games · projected winner, score and win chance · tap for the full game</span></h2>
-    <div class="filters" style="margin-top:-4px"><select class="chip" onchange="S.wsort=this.value;render()" aria-label="Sort winners">${sel("time","Sort: game time")}${sel("sure","Sort: most sure")}${sel("fav","Sort: biggest favorite")}</select></div>
-    <div class="twg">${gs.map(g => { const q2 = gameGrade(g), hw = g.proj.pHome >= .5;
-      return `<div class="tw" role="button" tabindex="0" onclick="S.tab='games';render();setTimeout(()=>{const e=document.getElementById('g-${g.id}');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})},50)">
+  const topIds = new Set(gs.map(g => [g.id, winnerPick(g)]).filter(([, w]) => w && w.gr === "A").sort((a, b) => b[1].score - a[1].score).slice(0, 3).map(([id]) => id));
+  const sel = (v, l) => `<option value="${v}" ${(S.wsort || "best") === v ? "selected" : ""}>${l}</option>`;
+  return `<h2>Team winners <span class="cnt">${gs.length} games · projected winner, score, win chance and a pick grade · tap for the full game</span></h2>
+    <div class="filters" style="margin-top:-4px"><select class="chip" onchange="S.wsort=this.value;render()" aria-label="Sort winners">${sel("best","Sort: best looks")}${sel("time","Sort: game time")}${sel("sure","Sort: most sure")}${sel("fav","Sort: biggest favorite")}</select></div>
+    <div class="twg">${gs.map(g => { const wp = winnerPick(g), top = wp && wp.gr === "A" && topIds.has(g.id);
+      return `<div class="tw ${top ? "top" : ""}" role="button" tabindex="0" onclick="S.tab='games';render();setTimeout(()=>{const e=document.getElementById('g-${g.id}');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})},50)">
+        ${wp ? `<div class="hd"><span>${top ? `<span style="color:var(--brass)">★ Top pick</span> · ` : ""}Pick: ${esc(wp.team.short)}</span><span style="display:flex;align-items:center;gap:4px"><span class="grade" style="width:18px;height:18px;font-size:12px;background:${GRADE_C[wp.gr]}22;color:${GRADE_C[wp.gr]}">${wp.gr}</span><span style="color:${GRADE_C[wp.gr]}">${wp.label}</span></span></div>` : ""}
         ${row(g, "away")}${row(g, "home")}
         <div class="wpb"><div style="width:${(1 - g.proj.pHome) * 100}%;background:${tc(g.away.abbr)}"></div><div style="flex:1;background:${tc(g.home.abbr)}"></div></div>
-        <div class="ft"><span>${esc(when(g.start))}${g.spreadTxt ? " · Vegas " + esc(g.spreadTxt) : ""}</span>${q2 ? `<span style="display:flex;align-items:center;gap:4px"><span class="grade" style="width:18px;height:18px;font-size:12px;background:${GRADE_C[q2.gr]}22;color:${GRADE_C[q2.gr]}">${q2.gr}</span><span style="color:${GRADE_C[q2.gr]};font-weight:700">${q2.label}</span></span>` : ""}</div></div>`; }).join("")}</div>`;
+        <div class="ft"><span>${esc(when(g.start))}${g.spreadTxt ? " · Vegas " + esc(g.spreadTxt) : ""}</span>${wp ? `<span style="white-space:nowrap">${wp.price != null ? `Kalshi ${Math.round(wp.price * 100)}¢ <b class="${wp.edge >= 0 ? "up" : "dn"}">${wp.edge >= 0 ? "+" : ""}${Math.round(wp.edge * 100)}¢</b>` : "no Kalshi price"}</span>` : ""}</div></div>`; }).join("")}</div>`;
 }
 function renderPlayers() {
   const s = sp(), q = S.q.toLowerCase();
@@ -745,6 +765,7 @@ function renderHow() {
     ${fx([["Lock","Pick6 68%+ · Kalshi edge 10¢+"],["Strong","Pick6 62%+ · Kalshi edge 7¢+"],["Lean","any other best play"]])}
     <p class="note" style="margin-top:10px"><b>Matchup grade (A–F)</b> rolls every adjustment for that stat into one letter: A means the setup lifts him 7%+, F means it costs him 7%+. <b>Streak</b> counts straight games over or under the line. <b>Line movement</b> shows how far a Pick6 line or Kalshi price has moved since this board first saw it, and whether it moved toward our side.</p>
     <p class="note"><b>Game sureness (A–D)</b> grades how much to trust each projected winner and final score, out of 100: how big the favorite is (45), whether the model agrees with the Vegas spread (25) and total (15), and how many games both teams have played (15), minus points for bad weather, back-to-backs and long injury lists. A = Strong (70+, and Vegas must back it up), B = Solid, C = Shaky, D = Toss-up. It's a guide to how sure the model is, not a track record yet.</p>
+    <p class="note"><b>Team winners pick grade (A–D)</b> starts from the game sureness score and adds or takes away up to 15 points for the Kalshi price: if Kalshi charges less for the projected winner than the model thinks it's worth, the grade goes up. A = Best look, B = Good look, C = Meh, D = Pass. The top three A's get a ★ Top pick tag.</p>
     <p class="note"><b>My Bets</b> reads your open Kalshi bets with your own API key, kept in GitHub Secrets and never shown on the page. For each one it multiplies the model's chance for every leg into a value, and says <b>Cash out</b> when Kalshi's bid is above that value.</p>
     <h3 style="margin-top:14px">Self-checking</h3>
     <p class="note">Every pick and projected stat is saved before the game and graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
