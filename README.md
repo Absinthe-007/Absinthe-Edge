@@ -17,6 +17,9 @@ NFL + NBA picks for **Kalshi** and **DraftKings Pick6**, with a full projected s
 - Projects every game's score, win chance, spread and total.
 - **Self-checking:** saves every pick and projection before the game, grades them against the ESPN box score afterward, and shows the record by platform, bet type, stat and confidence, plus calibration and projection error. Once a stat has 30+ graded picks, the model rescales its own confidence for that stat.
 
+## V3.2: combos
+Tap **+ Combo** on any Kalshi pick or team winner to build a combo slip. It shows the model's combined chance and warns when legs share a game. **Get Kalshi price** asks Kalshi's market makers for a live quote; **Buy** takes it, if it hasn't moved up more than 2¢. The worker learns how Kalshi prices combo quotes from your own past combo fills, and refuses combos until it can confirm that.
+
 ## V3.1: one-click Kalshi orders
 The `worker/` folder holds a Cloudflare Worker that places Kalshi orders for you. Your Kalshi key lives only in the worker's encrypted secrets, never on this public site. Setup steps are in `worker/SETUP.md`. Once it's connected on the My Bets tab, every Kalshi pick, team winner and line gets a ⚡ Buy button. The button opens an order ticket, and nothing is bought until you press the confirm button.
 
