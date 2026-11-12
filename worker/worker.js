@@ -161,22 +161,32 @@ export default {
         let rfq = await kalshi(env, base, "POST", "/communications/rfqs", { market_ticker: comboTicker, contracts: count, rest_remainder: false, replace_existing: true });
         if (!rfq.ok) return json({ error: "Couldn't ask for a price: " + kerr(rfq) }, 502);
         const rfqId = rfq.body.id;
-        // market makers answer within a few seconds
+        // market makers answer within a few seconds; look for up to ~15s
         let best = null, n = 0;
-        for (let i = 0; i < 10; i++) {
+        const seen = {}, priced = [];
+        for (let i = 0; i < 20; i++) {
           await sleep(i === 0 ? 900 : 700);
-          const qs = await kalshi(env, base, "GET", `/communications/quotes?rfq_id=${encodeURIComponent(rfqId)}&status=open&limit=100`);
-          const list = (qs.ok && qs.body.quotes) || [];
-          n = list.length;
+          let list = [];
+          for (const qsx of [`rfq_id=${encodeURIComponent(rfqId)}&limit=100`, `rfq_id=${encodeURIComponent(rfqId)}&rfq_user_filter=self&limit=100`]) {
+            const qs = await kalshi(env, base, "GET", `/communications/quotes?${qsx}`);
+            list = list.concat((qs.ok && qs.body.quotes) || []);
+          }
           for (const qt of list) {
+            seen[qt.id] = { status: qt.status, yes_bid: qt.yes_bid_dollars, no_bid: qt.no_bid_dollars };
+            if (String(qt.status || "open") !== "open") continue;
             const px = rule.price(qt);
             if (px != null && px > 0 && px < 1 && (!best || px < best.price)) best = { quoteId: qt.id, price: px };
           }
+          n = Object.keys(seen).length;
           if (best && i >= 2) break;
         }
         if (!best) {
+          const rs = await kalshi(env, base, "GET", `/communications/rfqs/${encodeURIComponent(rfqId)}`);
           await kalshi(env, base, "DELETE", `/communications/rfqs/${encodeURIComponent(rfqId)}`);
-          return json({ error: "No market maker priced this combo right now. Try fewer legs or try again in a minute." }, 409);
+          const rq = (rs.ok && (rs.body.rfq || rs.body)) || {};
+          return json({ error: n ? `Market makers answered (${n} quote${n > 1 ? "s" : ""}) but none would sell this combo's YES side. Try fewer legs or a different mix.`
+                                 : "No market maker priced this combo within 15 seconds. Try fewer legs, or try again closer to game time.",
+                        debug: { combo: comboTicker, rfqStatus: rq.status || null, quotes: Object.values(seen).slice(0, 5), rule: rule.acceptFor + "/" + (rule.priceKey || "") } }, 409);
         }
         return json({ ok: true, rfqId, quoteId: best.quoteId, comboTicker, price: best.price, count, quotes: n });
       }
@@ -317,7 +327,7 @@ async function comboRule(env, base) {
   if (!acceptFor || !priceKey) {
     return { error: "Combo buying is off until there's at least one combo in your Kalshi history to learn from: Kalshi's docs don't say clearly how combo quotes are priced, so the worker won't guess with your money. Place one small combo in the Kalshi app, then try again." , votes };
   }
-  RULE = { at: Date.now(), acceptFor, votes,
+  RULE = { at: Date.now(), acceptFor, votes, priceKey,
            price: q => { const x = priceKey === "yes" ? Number(q.yes_bid_dollars) : 1 - Number(q.no_bid_dollars); return x > 0 && x < 1 ? x : null; } };
   return RULE;
 }
