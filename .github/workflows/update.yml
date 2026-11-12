@@ -46,6 +46,8 @@ jobs:
           ls -la data
 
       - name: Build picks, projections and grades
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python run.py
 
       - name: Game-winner tracker
