@@ -15,12 +15,19 @@
  *   MAX_SLIPPAGE_CENTS   2     reject if the price moved more than this above what you confirmed
  *   KALSHI_API_BASE      https://api.elections.kalshi.com   (use https://demo-api.kalshi.co to test on Kalshi's demo)
  *
+ *   COMBO_COLLECTION     KXMVECROSSCATEGORY-R   Kalshi combo collection to build combos in
+ *
  * Endpoints (all need the X-App-Password header):
  *   GET  /status            -> balance, limits
  *   POST /quote  {ticker, side}                         -> live price for that side
  *   POST /order  {ticker, side, count, price, clientOrderId}
  *        Buys `count` contracts of `side` at up to `price` (dollars, e.g. 0.42), immediate-or-cancel:
  *        it fills what it can at that price or better right now and cancels the rest. Nothing is left resting.
+ *   POST /combo/quote  {legs:[{ticker, side}], count}    -> builds the combo on Kalshi and asks market makers for a price (RFQ)
+ *   POST /combo/accept {rfqId, quoteId, count, price}    -> buys the combo at that quote if it's still at or under `price`
+ *   POST /combo/cancel {rfqId}                           -> withdraws the price request
+ *   Combo side/price rules are learned from your own past combo fills before any combo is bought; if they can't be
+ *   confirmed, combo buying is refused.
  */
 
 const PREFIX = "/trade-api/v2";
@@ -100,7 +107,24 @@ export default {
           time_in_force: "immediate_or_cancel",
           client_order_id: String(b.clientOrderId),
         };
-        const r = await kalshi(env, base, "POST", "/portfolio/orders", order);
+        let r = await kalshi(env, base, "POST", "/portfolio/orders", order);
+        if (r.status === 404 || r.status === 410) {
+          // legacy endpoint retired: use Create Order V2 (prices are quoted from the YES side; buying NO = selling YES at 1 - price)
+          const v2 = {
+            ticker, side: side === "yes" ? "bid" : "ask", count: String(count),
+            price: (side === "yes" ? priceC / 100 : 1 - priceC / 100).toFixed(2),
+            time_in_force: "immediate_or_cancel", self_trade_prevention_type: "taker_at_cross",
+            client_order_id: String(b.clientOrderId),
+          };
+          r = await kalshi(env, base, "POST", "/portfolio/events/orders", v2);
+          if (!r.ok) return json({ error: kerr(r) }, r.status === 409 ? 409 : 502);
+          const filled = Number(r.body.fill_count || 0);
+          let avg = r.body.average_fill_price != null ? Number(r.body.average_fill_price) : null;
+          if (avg != null && side === "no") avg = 1 - avg;
+          const feeEach = r.body.average_fee_paid != null ? Number(r.body.average_fee_paid) : null;
+          return json({ ok: true, orderId: r.body.order_id, filled, asked: count, avg, paid: avg != null ? avg * filled : null,
+                        fees: feeEach != null ? feeEach * filled : null, title: q.title });
+        }
         if (!r.ok) return json({ error: kerr(r) }, r.status === 409 ? 409 : 502);
         const o = r.body.order || {};
         const filled = o.fill_count ?? 0;
@@ -108,6 +132,103 @@ export default {
         const fees = o.taker_fees != null ? ((o.taker_fees || 0) + (o.maker_fees || 0)) / 100 : null;
         return json({ ok: true, orderId: o.order_id, status: o.status, filled, asked: count, paid, fees,
                       avg: filled && paid != null ? paid / filled : null, title: q.title });
+      }
+
+      // ---------------- combos (Kalshi multivariate markets, priced by market makers through an RFQ)
+      if (req.method === "POST" && url.pathname === "/combo/quote") {
+        const b = await body(req);
+        const legs = Array.isArray(b.legs) ? b.legs : [];
+        const count = Number(b.count);
+        if (legs.length < 2 || legs.length > 12) return json({ error: "A combo needs 2 to 12 legs." }, 400);
+        for (const l of legs) {
+          const bad = checkTicket(l.ticker, String(l.side || "").toLowerCase());
+          if (bad) return json({ error: bad + ` (${l.ticker})` }, 400);
+        }
+        if (new Set(legs.map(l => l.ticker)).size !== legs.length) return json({ error: "The same market is in the combo twice." }, 400);
+        if (!Number.isInteger(count) || count < 1 || count > limits.maxContracts) return json({ error: `Contracts must be 1 to ${limits.maxContracts}.` }, 400);
+        const rule = await comboRule(env, base);
+        if (rule.error) return json({ error: rule.error }, 409);
+        const selected = legs.map(l => ({ market_ticker: l.ticker, event_ticker: l.ticker.split("-").slice(0, 2).join("-"), side: String(l.side).toLowerCase() }));
+        let made = null, lastErr = null;
+        const cols = [env.COMBO_COLLECTION || "KXMVECROSSCATEGORY-R", "KXMVECROSSCATEGORY-SHARD1-R", "KXMVESPORTSMULTIGAMEEXTENDED-R"];
+        for (const col of [...new Set(cols)]) {
+          const r = await kalshi(env, base, "POST", `/multivariate_event_collections/${col}`, { selected_markets: selected });
+          if (r.ok && r.body.market_ticker) { made = r.body; break; }
+          lastErr = r;
+        }
+        if (!made) return json({ error: "Kalshi wouldn't build that combo: " + kerr(lastErr) }, 400);
+        const comboTicker = made.market_ticker;
+        let rfq = await kalshi(env, base, "POST", "/communications/rfqs", { market_ticker: comboTicker, contracts: count, rest_remainder: false, replace_existing: true });
+        if (!rfq.ok) return json({ error: "Couldn't ask for a price: " + kerr(rfq) }, 502);
+        const rfqId = rfq.body.id;
+        // market makers answer within a few seconds
+        let best = null, n = 0;
+        for (let i = 0; i < 10; i++) {
+          await sleep(i === 0 ? 900 : 700);
+          const qs = await kalshi(env, base, "GET", `/communications/quotes?rfq_id=${encodeURIComponent(rfqId)}&status=open&limit=100`);
+          const list = (qs.ok && qs.body.quotes) || [];
+          n = list.length;
+          for (const qt of list) {
+            const px = rule.price(qt);
+            if (px != null && px > 0 && px < 1 && (!best || px < best.price)) best = { quoteId: qt.id, price: px };
+          }
+          if (best && i >= 2) break;
+        }
+        if (!best) {
+          await kalshi(env, base, "DELETE", `/communications/rfqs/${encodeURIComponent(rfqId)}`);
+          return json({ error: "No market maker priced this combo right now. Try fewer legs or try again in a minute." }, 409);
+        }
+        return json({ ok: true, rfqId, quoteId: best.quoteId, comboTicker, price: best.price, count, quotes: n });
+      }
+
+      if (req.method === "POST" && url.pathname === "/combo/accept") {
+        const b = await body(req);
+        const count = Number(b.count), price = Number(b.price);
+        const rfqId = String(b.rfqId || ""), quoteId = String(b.quoteId || "");
+        if (!/^[A-Za-z0-9-]{8,80}$/.test(rfqId) || !/^[A-Za-z0-9-]{8,80}$/.test(quoteId)) return json({ error: "Missing combo quote; get a new price." }, 400);
+        if (!Number.isInteger(count) || count < 1 || count > limits.maxContracts) return json({ error: `Contracts must be 1 to ${limits.maxContracts}.` }, 400);
+        if (!(price > 0 && price < 1)) return json({ error: "Bad price." }, 400);
+        const rule = await comboRule(env, base);
+        if (rule.error) return json({ error: rule.error }, 409);
+        const g = await kalshi(env, base, "GET", `/communications/rfqs/${encodeURIComponent(rfqId)}/quotes/${encodeURIComponent(quoteId)}`);
+        const qt = g.ok && g.body.quote;
+        if (!qt) return json({ error: "That price expired; get a new one." }, 409);
+        if (String(qt.status) !== "open") return json({ error: `That price is ${qt.status} now; get a new one.` }, 409);
+        if (!/^KXMVE/.test(String(qt.market_ticker || ""))) return json({ error: "That quote isn't for a combo." }, 400);
+        const now = rule.price(qt);
+        if (now == null || now > price + limits.slippage + 1e-9) return json({ error: `The combo price moved to ${now == null ? "—" : Math.round(now * 1000) / 10 + "¢"}, above what you confirmed.`, price: now }, 409);
+        const qty = Number(qt.contracts_fp || count);
+        if (Math.abs(qty - count) > 1e-9) return json({ error: "Quote size doesn't match; get a new price." }, 409);
+        const cost = now * qty;
+        if (cost > limits.maxOrder + 1e-9) return json({ error: `That's $${cost.toFixed(2)}; the per-order cap is $${limits.maxOrder.toFixed(2)} (MAX_ORDER_DOLLARS).` }, 400);
+        const acc = await kalshi(env, base, "PUT", `/communications/rfqs/${encodeURIComponent(rfqId)}/quotes/${encodeURIComponent(quoteId)}/accept`, { accepted_side: rule.acceptFor });
+        if (!acc.ok) return json({ error: "Kalshi didn't take it: " + kerr(acc) }, 502);
+        // the market maker confirms, then Kalshi executes (a few seconds for combos)
+        let st = "accepted", q2 = null;
+        for (let i = 0; i < 12 && st !== "executed" && st !== "cancelled"; i++) {
+          await sleep(700);
+          const r2 = await kalshi(env, base, "GET", `/communications/rfqs/${encodeURIComponent(rfqId)}/quotes/${encodeURIComponent(quoteId)}`);
+          q2 = r2.ok && r2.body.quote; st = q2 ? String(q2.status) : st;
+        }
+        let filled = null, avg = null, side = null;
+        const oid = q2 && q2.rfq_creator_order_id;
+        if (oid) {
+          const f = await kalshi(env, base, "GET", `/portfolio/fills?order_id=${encodeURIComponent(oid)}&limit=100`);
+          const fills = (f.ok && f.body.fills) || [];
+          if (fills.length) {
+            filled = fills.reduce((a, x) => a + Number(x.count_fp || x.count || 0), 0);
+            side = fills[0].outcome_side;
+            const pk = side === "no" ? "no_price_dollars" : "yes_price_dollars";
+            avg = fills.reduce((a, x) => a + Number(x[pk] || 0) * Number(x.count_fp || x.count || 0), 0) / (filled || 1);
+          }
+        }
+        return json({ ok: true, status: st, filled, side, avg, paid: filled && avg != null ? filled * avg : null, comboTicker: qt.market_ticker });
+      }
+
+      if (req.method === "POST" && url.pathname === "/combo/cancel") {
+        const b = await body(req);
+        if (/^[A-Za-z0-9-]{8,80}$/.test(String(b.rfqId || ""))) await kalshi(env, base, "DELETE", `/communications/rfqs/${encodeURIComponent(b.rfqId)}`);
+        return json({ ok: true });
       }
 
       return json({ error: "Not found" }, 404);
@@ -162,6 +283,43 @@ async function quote(base, ticker, side) {
   const bid = side === "yes" ? px("yes_bid") : px("no_bid");
   return { ticker, side, ask, bid: bid > 0 ? bid : null, title: m.title || m.yes_sub_title || ticker,
            sub: side === "yes" ? m.yes_sub_title : m.no_sub_title, closes: m.close_time || null, status: st };
+}
+
+// ------------------------------------------------------------------ combo rules, learned from your own history
+// Kalshi's docs don't spell out which side an RFQ requester ends up holding for each accepted_side, or which quote
+// price they pay. Rather than guess with real money, we read your own past combo fills (made in the Kalshi app or
+// here) and work out the rule from them. If there's no clear history, combo buying stays off.
+let RULE = null;
+async function comboRule(env, base) {
+  if (RULE && RULE.at > Date.now() - 6 * 3600e3) return RULE;
+  const qs = await kalshi(env, base, "GET", "/communications/quotes?rfq_user_filter=self&status=executed&limit=50");
+  const quotes = ((qs.ok && qs.body.quotes) || []).filter(q => q.accepted_side && q.rfq_creator_order_id).slice(0, 12);
+  const votes = { acceptYesGivesYes: 0, acceptYesGivesNo: 0, acceptNoGivesYes: 0, acceptNoGivesNo: 0, yesPaysYesBid: 0, yesPaysOneMinusNoBid: 0 };
+  for (const q of quotes) {
+    const f = await kalshi(env, base, "GET", `/portfolio/fills?order_id=${encodeURIComponent(q.rfq_creator_order_id)}&limit=20`);
+    const fill = ((f.ok && f.body.fills) || [])[0];
+    if (!fill || !fill.outcome_side) continue;
+    const a = String(q.accepted_side), o = String(fill.outcome_side);
+    votes[`accept${a === "yes" ? "Yes" : "No"}Gives${o === "yes" ? "Yes" : "No"}`]++;
+    if (o === "yes") {
+      const paid = Number(fill.yes_price_dollars), yb = Number(q.yes_bid_dollars), nb = Number(q.no_bid_dollars);
+      if (Math.abs(paid - yb) < 0.006) votes.yesPaysYesBid++;
+      else if (Math.abs(paid - (1 - nb)) < 0.006) votes.yesPaysOneMinusNoBid++;
+    }
+  }
+  const v = votes;
+  let acceptFor = null;
+  if ((v.acceptYesGivesYes || v.acceptNoGivesNo) && !v.acceptYesGivesNo && !v.acceptNoGivesYes) acceptFor = "yes";
+  else if ((v.acceptYesGivesNo || v.acceptNoGivesYes) && !v.acceptYesGivesYes && !v.acceptNoGivesNo) acceptFor = "no";
+  let priceKey = null;
+  if (v.yesPaysYesBid && !v.yesPaysOneMinusNoBid) priceKey = "yes";
+  else if (v.yesPaysOneMinusNoBid && !v.yesPaysYesBid) priceKey = "1-no";
+  if (!acceptFor || !priceKey) {
+    return { error: "Combo buying is off until there's at least one combo in your Kalshi history to learn from: Kalshi's docs don't say clearly how combo quotes are priced, so the worker won't guess with your money. Place one small combo in the Kalshi app, then try again." , votes };
+  }
+  RULE = { at: Date.now(), acceptFor, votes,
+           price: q => { const x = priceKey === "yes" ? Number(q.yes_bid_dollars) : 1 - Number(q.no_bid_dollars); return x > 0 && x < 1 ? x : null; } };
+  return RULE;
 }
 
 // ------------------------------------------------------------------ Kalshi signing
