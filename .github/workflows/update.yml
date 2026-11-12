@@ -48,6 +48,13 @@ jobs:
       - name: Build picks, projections and grades
         run: python run.py
 
+      - name: My Bets (your Kalshi positions)
+        continue-on-error: true
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python mybets.py
+
       - name: Back up tracker
         if: always()
         run: '[ -s data/track.json ] && cp data/track.json data/cache/track_backup.json || true'
@@ -64,6 +71,7 @@ jobs:
           mkdir -p _site/data
           cp index.html _site/
           cp data/board.json data/players.json data/track.json _site/data/
+          [ -s data/mybets.json ] && cp data/mybets.json _site/data/ || true
 
       - uses: actions/upload-pages-artifact@v3
         with:
