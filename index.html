@@ -163,6 +163,12 @@ th:first-child,td:first-child,.l{text-align:left!important}
 .panel h3{margin:0 0 10px;font:700 18px var(--display);letter-spacing:.03em}
 tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{background:var(--brassbg)}
 .kpi.clk{cursor:pointer;transition:border-color .15s}.kpi.clk:hover{border-color:var(--brass)}
+.twg{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px}
+.tw{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;min-width:0;transition:border-color .15s}.tw:hover{border-color:var(--brass)}
+.tw .tr{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:3px 0;color:var(--muted)}.tw .tr img{width:22px;height:22px}
+.tw .tr.win{color:var(--chalk)}.tw .tr.win .nm{font-weight:800}.tw .tr .sc{font:800 18px var(--display)}.tw .tr .wp{font:700 13px var(--body);min-width:38px;text-align:right}
+.tw .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tw .ft{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;font-size:11.5px;color:var(--dim)}
+.tw .wpb{margin:6px 0 0;height:6px}
 .bet{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;min-width:0}
 .bet.cash{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}.bet.lost{opacity:.6}
 .bet .bh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.bet .bh .ttl{font:800 18px var(--display);letter-spacing:.02em;flex:1;min-width:180px}
@@ -412,7 +418,7 @@ function gradeBadge(g) {
 function gameBanner(g, withPicks=true) {
   const pr = g.proj || {};
   const gp = withPicks ? sp().gamePicks.filter(p => p.gameId === g.id && p.rec) : [];
-  return `<div class="gb" style="--ca:${tc(g.away.abbr)}66;--ch:${tc(g.home.abbr)}66">
+  return `<div class="gb" ${withPicks ? "" : `id="g-${g.id}"`} style="--ca:${tc(g.away.abbr)}66;--ch:${tc(g.home.abbr)}66">
     <div class="gbt">
       <div class="gtm"><img src="${esc(g.away.logo)}" alt=""><div style="min-width:0"><div class="n">${esc(g.away.short)}</div><div class="r">${esc(g.away.record||"")} · Off #${g.stand?.away?.pfRank ?? "—"} · Def #${g.stand?.away?.paRank ?? "—"}</div></div><div class="pp">${fmt(pr.awayPts)}</div></div>
       <div class="gmid"><div class="t">${when(g.start)}</div>${projWinner(g)}</div>
@@ -459,6 +465,25 @@ function renderPicks() {
 }
 
 // ---------------- projections view ----------------
+function teamWinners(q) {
+  const s = sp();
+  let gs = s.games.filter(g => g.proj && g.proj.pHome != null && (S.game === "all" || g.id === S.game) &&
+    (!q || [g.home.short, g.home.name, g.home.abbr, g.away.short, g.away.name, g.away.abbr].join(" ").toLowerCase().includes(q)));
+  if (!gs.length) return "";
+  if (S.wsort === "sure") gs = gs.slice().sort((a, b) => (gameGrade(b)?.s ?? 0) - (gameGrade(a)?.s ?? 0));
+  else if (S.wsort === "fav") gs = gs.slice().sort((a, b) => Math.abs(b.proj.pHome - .5) - Math.abs(a.proj.pHome - .5));
+  const row = (g, side) => { const t = g[side], p = side === "home" ? g.proj.pHome : 1 - g.proj.pHome, pts = side === "home" ? g.proj.homePts : g.proj.awayPts;
+    const won = side === "home" ? g.proj.homePts >= g.proj.awayPts : g.proj.awayPts > g.proj.homePts;
+    return `<div class="tr ${won ? "win" : ""}"><img src="${esc(t.logo)}" alt=""><span class="nm">${esc(t.short)} <small style="color:var(--dim);font-weight:500">${esc(t.record || "")}</small></span><span class="sc">${Math.round(pts)}</span><span class="wp" style="color:${won ? "var(--more)" : "var(--dim)"}">${pct(p)}</span></div>`; };
+  const sel = (v, l) => `<option value="${v}" ${(S.wsort || "time") === v ? "selected" : ""}>${l}</option>`;
+  return `<h2>Team winners <span class="cnt">${gs.length} games · projected winner, score and win chance · tap for the full game</span></h2>
+    <div class="filters" style="margin-top:-4px"><select class="chip" onchange="S.wsort=this.value;render()" aria-label="Sort winners">${sel("time","Sort: game time")}${sel("sure","Sort: most sure")}${sel("fav","Sort: biggest favorite")}</select></div>
+    <div class="twg">${gs.map(g => { const q2 = gameGrade(g), hw = g.proj.pHome >= .5;
+      return `<div class="tw" role="button" tabindex="0" onclick="S.tab='games';render();setTimeout(()=>{const e=document.getElementById('g-${g.id}');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})},50)">
+        ${row(g, "away")}${row(g, "home")}
+        <div class="wpb"><div style="width:${(1 - g.proj.pHome) * 100}%;background:${tc(g.away.abbr)}"></div><div style="flex:1;background:${tc(g.home.abbr)}"></div></div>
+        <div class="ft"><span>${esc(when(g.start))}${g.spreadTxt ? " · Vegas " + esc(g.spreadTxt) : ""}</span>${q2 ? `<span style="display:flex;align-items:center;gap:4px"><span class="grade" style="width:18px;height:18px;font-size:12px;background:${GRADE_C[q2.gr]}22;color:${GRADE_C[q2.gr]}">${q2.gr}</span><span style="color:${GRADE_C[q2.gr]};font-weight:700">${q2.label}</span></span>` : ""}</div></div>`; }).join("")}</div>`;
+}
 function renderPlayers() {
   const s = sp(), q = S.q.toLowerCase();
   const keys = new Set(); Object.values(s.players).forEach(p => Object.keys(p.proj).forEach(k => keys.add(k)));
@@ -471,6 +496,7 @@ function renderPlayers() {
       <select class="chip" onchange="S.game=this.value;render()" aria-label="Game"><option value="all">All games</option>${opts}</select>
       <select class="chip" onchange="S.pstat=this.value;render()" aria-label="Sort by stat"><option value="all">Sort: biggest names</option>${[...keys].map(k=>`<option value="${k}" ${S.pstat===k?"selected":""}>Sort: ${LBL[k]||k}</option>`).join("")}</select>
     </div>
+    ${teamWinners(q)}
     <h2>Projected stat lines <span class="cnt">${list.length} players · gold boxes have a live line · tap for the breakdown</span></h2>
     ${list.length ? `<div class="grid">${list.slice(0, 200).map(p => `<article class="card pc" onclick="openPlayer('${p.id}')" style="--tc:${tc(p.team)}">
       <div class="art">${logo(p.team, "wm", "")}${headshot(p)}
