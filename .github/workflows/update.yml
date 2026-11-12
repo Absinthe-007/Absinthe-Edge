@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir -p data
           SITE="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
-          for f in track board players; do
+          for f in track board players gametrack; do
             curl -fsSL "$SITE/data/$f.json" -o "data/$f.json.new" && mv "data/$f.json.new" "data/$f.json" || rm -f "data/$f.json.new"
           done
           # fall back to the cached copy if the site could not be reached
@@ -47,6 +47,10 @@ jobs:
 
       - name: Build picks, projections and grades
         run: python run.py
+
+      - name: Game-winner tracker
+        continue-on-error: true
+        run: python gametrack.py
 
       - name: My Bets (your Kalshi positions)
         continue-on-error: true
@@ -72,6 +76,7 @@ jobs:
           cp index.html _site/
           cp data/board.json data/players.json data/track.json _site/data/
           [ -s data/mybets.json ] && cp data/mybets.json _site/data/ || true
+          [ -s data/gametrack.json ] && cp data/gametrack.json _site/data/ || true
 
       - uses: actions/upload-pages-artifact@v3
         with:
