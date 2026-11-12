@@ -10,7 +10,7 @@ import sources as S
 import model as M
 import extras as X
 
-VERSION = "1.2"
+VERSION = "2.1"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
