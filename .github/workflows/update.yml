@@ -76,6 +76,7 @@ jobs:
         run: |
           mkdir -p _site/data
           cp index.html _site/
+          cp apple-touch-icon.png icon-192.png icon-512.png favicon-32.png manifest.webmanifest _site/ 2>/dev/null || true
           cp data/board.json data/players.json data/track.json _site/data/
           [ -s data/mybets.json ] && cp data/mybets.json _site/data/ || true
           [ -s data/gametrack.json ] && cp data/gametrack.json _site/data/ || true
