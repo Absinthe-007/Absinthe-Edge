@@ -277,6 +277,16 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 .cleg:last-child{border-bottom:0}.cleg .nm{flex:1;min-width:0}.cleg .nm small{display:block;color:var(--muted);font-size:11.5px}
 .cleg button{background:none;border:0;color:var(--dim);font-size:16px}
 .cleg .sg{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.ob{margin:14px 0 4px;border:1px solid var(--line2);border-radius:18px;padding:14px 16px;background:linear-gradient(135deg,rgba(240,181,74,.08),rgba(63,201,192,.06)),var(--panel)}
+.ob h3{margin:0 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ob .seg{display:inline-flex;border:1px solid var(--line2);border-radius:99px;overflow:hidden}
+.ob .seg button{border:0;background:none;padding:5px 12px;font-size:12px;color:var(--muted)}.ob .seg button.on{background:var(--brass);color:var(--ink);font-weight:700}
+.obg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.obs{background:rgba(10,15,29,.35);border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:grid;gap:8px;min-width:0}
+.obs b.sp{font:800 16px var(--display);letter-spacing:.06em;color:var(--brass)}
+.obs label{font-size:11.5px;color:var(--muted);display:grid;gap:4px}
+.obs select{width:100%;min-width:0;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;color:var(--chalk);font-size:13px}
+@media (max-width:680px){.obg{grid-template-columns:minmax(0,1fr)}}
 .panel .srcstrip{flex-wrap:wrap;overflow:visible}
 .src b{font:700 13px var(--display);letter-spacing:.03em}.src span{color:var(--muted)}
 .mcheck{margin-top:2px}
@@ -305,7 +315,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 <body>
 <header>
   <div class="wrap hrow">
-    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V3.2</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
+    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V3.3</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
     <div class="seg" id="sportSeg"><button data-s="NFL">NFL</button><button data-s="NBA">NBA</button></div>
     <div class="grow"></div>
     <input class="search" id="q" placeholder="Search player or team" aria-label="Search player or team">
@@ -351,7 +361,7 @@ const GRADE_C = {A:"#3ddc97",B:"#9be37a",C:"#c9cfdc",D:"#ffb26b",F:"#ff6f6f"};
 let B = null, P = {}, MB = null, GT = null;
 let S = {sport:"NBA", tab:"picks", plat:"all", recOnly:true, game:"all", sort:"prob", q:"", pstat:"all", tierF:"all", group:"game"};
 try { Object.assign(S, JSON.parse(localStorage.getItem("ae-state") || "{}"), {q:"", game:"all"}); } catch(e) {}
-const save = () => { try { localStorage.setItem("ae-state", JSON.stringify({sport:S.sport, tab:S.tab, pview:S.pview, plat:S.plat, recOnly:S.recOnly, sort:S.sort, group:S.group, tierF:S.tierF, seen30:S.seen30})); } catch(e) {} };
+const save = () => { try { localStorage.setItem("ae-state", JSON.stringify({sport:S.sport, tab:S.tab, pview:S.pview, plat:S.plat, recOnly:S.recOnly, sort:S.sort, group:S.group, tierF:S.tierF, seen30:S.seen30, obMode:S.obMode})); } catch(e) {} };
 
 const toDate = t => new Date(t.endsWith("Z") ? t : t + "Z");
 const when = t => t ? toDate(t).toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"}) : "";
@@ -616,7 +626,7 @@ function filteredPicks() {
     && (S.tierF === "all" || p.tier === S.tierF) && (!q || (p.player + " " + p.team + " " + p.opp + " " + p.stat).toLowerCase().includes(q)));
   if (!S.recOnly) picks = picks.filter(p => p.platform === "Pick6" || p.main || p.rec);
   const tierRank = {Lock:0, Strong:1, Lean:2};
-  const sorters = {prob:(a,b)=>b.prob-a.prob, edge:(a,b)=>b.edge-a.edge, tier:(a,b)=>(tierRank[a.tier]??3)-(tierRank[b.tier]??3)||b.prob-a.prob, time:(a,b)=>a.start.localeCompare(b.start)||b.prob-a.prob};
+  const sorters = {pay:(a,b)=>beOf(a)-beOf(b)||b.prob-a.prob, prob:(a,b)=>b.prob-a.prob, edge:(a,b)=>b.edge-a.edge, tier:(a,b)=>(tierRank[a.tier]??3)-(tierRank[b.tier]??3)||b.prob-a.prob, time:(a,b)=>a.start.localeCompare(b.start)||b.prob-a.prob};
   return picks.sort(sorters[S.sort] || sorters.prob);
 }
 function renderPicks() {
@@ -629,7 +639,7 @@ function renderPicks() {
     const by = {}; picks.forEach(p => (by[p.gameId] = by[p.gameId] || []).push(p));
     body = s.games.filter(g => by[g.id]).map(g => gameBanner(g) + `<div class="grid">${by[g.id].slice(0, 24).map(pickCard).join("")}</div>`).join("");
   } else body = `<div class="grid">${picks.slice(0, 150).map(pickCard).join("")}</div>${picks.length > 150 ? `<p class="note">Showing the top 150. Search or pick a game to see the rest.</p>` : ""}`;
-  $("#v-picks").innerHTML = `${v3Hero()}${sourceStrip()}
+  $("#v-picks").innerHTML = `${v3Hero()}${oddsBoard()}${sourceStrip()}
     <div class="filters">
       ${["all","Pick6","Kalshi"].map(x => `<button class="chip ${S.plat===x?"on":""}" onclick="S.plat='${x}';render()">${x==="all"?"All platforms":x}</button>`).join("")}
       <span class="sep"></span>
@@ -639,7 +649,7 @@ function renderPicks() {
       <button class="chip ${S.group==="game"?"on":""}" onclick="S.group='game';render()">By game</button>
       <button class="chip ${S.group==="list"?"on":""}" onclick="S.group='list';render()">One list</button>
       <select class="chip" onchange="S.game=this.value;render()" aria-label="Game"><option value="all">All games</option>${opts}</select>
-      <select class="chip" onchange="S.sort=this.value;render()" aria-label="Sort">${[["prob","Sort: hit chance"],["tier","Sort: tier"],["edge","Sort: edge"],["time","Sort: start time"]].map(([v,t])=>`<option value="${v}" ${S.sort===v?"selected":""}>${t}</option>`).join("")}</select>
+      <select class="chip" onchange="S.sort=this.value;render()" aria-label="Sort">${[["prob","Sort: most likely to hit"],["pay","Sort: biggest payout"],["tier","Sort: tier"],["edge","Sort: edge"],["time","Sort: start time"]].map(([v,t])=>`<option value="${v}" ${S.sort===v?"selected":""}>${t}</option>`).join("")}</select>
     </div>
     <h2>${S.recOnly ? "Best plays" : "All lines"} <span class="cnt">${picks.length} ${S.sport} player picks</span></h2>${body}`;
 }
@@ -668,6 +678,8 @@ function teamWinners(q) {
   const wsort = S.wsort || "best";
   if (wsort === "best") gs = gs.slice().sort((a, b) => (winnerPick(b)?.score ?? 0) - (winnerPick(a)?.score ?? 0));
   else if (S.wsort === "sure") gs = gs.slice().sort((a, b) => (gameGrade(b)?.s ?? 0) - (gameGrade(a)?.s ?? 0));
+  else if (S.wsort === "odds") gs = gs.slice().sort((a, b) => Math.max(b.proj.pHome, 1 - b.proj.pHome) - Math.max(a.proj.pHome, 1 - a.proj.pHome));
+  else if (S.wsort === "pay") gs = gs.slice().sort((a, b) => ((winnerPick(a) || {}).price ?? 2) - ((winnerPick(b) || {}).price ?? 2));
   else if (S.wsort === "fav") gs = gs.slice().sort((a, b) => Math.abs(b.proj.pHome - .5) - Math.abs(a.proj.pHome - .5));
   const row = (g, side) => { const t = g[side], p = side === "home" ? g.proj.pHome : 1 - g.proj.pHome, pts = side === "home" ? g.proj.homePts : g.proj.awayPts;
     const won = side === "home" ? g.proj.homePts >= g.proj.awayPts : g.proj.awayPts > g.proj.homePts;
@@ -675,7 +687,7 @@ function teamWinners(q) {
   const topIds = new Set(gs.map(g => [g.id, winnerPick(g)]).filter(([, w]) => w && w.gr === "A").sort((a, b) => b[1].score - a[1].score).slice(0, 3).map(([id]) => id));
   const sel = (v, l) => `<option value="${v}" ${(S.wsort || "best") === v ? "selected" : ""}>${l}</option>`;
   return `<h2>Team winners <span class="cnt">${gs.length} games · projected winner, score, win chance and a pick grade · tap for the full game</span></h2>
-    <div class="filters" style="margin-top:-4px"><select class="chip" onchange="S.wsort=this.value;render()" aria-label="Sort winners">${sel("best","Sort: best looks")}${sel("time","Sort: game time")}${sel("sure","Sort: most sure")}${sel("fav","Sort: biggest favorite")}</select></div>
+    <div class="filters" style="margin-top:-4px"><select class="chip" onchange="S.wsort=this.value;render()" aria-label="Sort winners">${sel("best","Sort: best looks")}${sel("time","Sort: game time")}${sel("sure","Sort: most sure")}${sel("fav","Sort: biggest favorite")}${sel("odds","Sort: highest win odds")}${sel("pay","Sort: biggest payout")}</select></div>
     <div class="twg">${gs.map(g => { const wp = winnerPick(g), top = wp && wp.gr === "A" && topIds.has(g.id);
       return `<div class="tw ${top ? "top" : ""}" role="button" tabindex="0" onclick="S.tab='games';render();setTimeout(()=>{const e=document.getElementById('g-${g.id}');if(e)e.scrollIntoView({behavior:'smooth',block:'start'})},50)">
         ${wp ? `<div class="hd"><span>${top ? `<span style="color:var(--brass)">★ Top pick</span> · ` : ""}Pick: ${esc(wp.team.short)}</span><span style="display:flex;align-items:center;gap:4px"><span class="grade" style="width:18px;height:18px;font-size:12px;background:${GRADE_C[wp.gr]}22;color:${GRADE_C[wp.gr]}">${wp.gr}</span><span style="color:${GRADE_C[wp.gr]}">${wp.label}</span></span></div>` : ""}
@@ -865,6 +877,68 @@ async function placeOrder() {
     TK.coid = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).replace(/[^A-Za-z0-9-]/g, "");
   }
   TK.busy = false; drawTicket();
+}
+
+
+// ---------------- V3.3: Odds Board (players + team winners, NFL and NBA) ----------------
+const beOf = p => p.platform === "Kalshi" ? (p.price || 1) : Math.max(0.01, (p.prob ?? 0) - (p.edge ?? 0));
+function oddsLists(sport, mode) {
+  const s = (B && B.sports[sport]) || {picks: [], gamePicks: [], games: [], players: {}};
+  // players: one line per player (their best line for the chosen mode)
+  const best = {};
+  for (const p of s.picks) {
+    if (p.prob == null || !p.pid) continue;
+    if (mode === "pay" && p.platform !== "Kalshi") continue;
+    if (mode === "pay" && (p.prob < 0.08 || !p.price)) continue;
+    const score = mode === "pay" ? 1 / p.price : p.prob;
+    if (!best[p.pid] || score > best[p.pid].score) best[p.pid] = {p, score};
+  }
+  const players = Object.values(best).sort((a, b) => b.score - a.score).slice(0, 40).map(({p}) => {
+    const sideTxt = p.platform === "Pick6" ? (p.side === "MORE" ? "over" : "under") : (p.side === "YES" ? "over" : "under");
+    const lab = `${p.player} ${sideTxt} ${fmt(p.line)} ${p.stat}`;
+    const txt = mode === "pay"
+      ? `${Math.round((1 / p.price - 1) * 100)}% return · ${lab} · ${Math.round(p.price * 100)}¢, model ${pct(p.prob)}`
+      : `${pct(p.prob)} · ${lab} · ${p.platform}`;
+    return {v: `p|${sport}|${p.pid}`, t: txt};
+  });
+  // teams: every team in every upcoming game
+  const teams = [];
+  for (const g of s.games) {
+    if (!g.proj || g.proj.pHome == null) continue;
+    for (const side of ["home", "away"]) {
+      const t = g[side], pw = side === "home" ? g.proj.pHome : 1 - g.proj.pHome;
+      const mk = s.gamePicks.find(x => x.gameId === g.id && x.type === "ml" && (x.label || "").toLowerCase() === (t.short + " to win").toLowerCase());
+      const price = mk ? mk.yesAsk : null;
+      if (mode === "pay" && (!price || pw < 0.08)) continue;
+      const vs = side === "home" ? `vs ${g.away.abbr}` : `@ ${g.home.abbr}`;
+      teams.push({score: mode === "pay" ? 1 / price : pw, v: `g|${sport}|${g.id}`,
+        t: mode === "pay" ? `${Math.round((1 / price - 1) * 100)}% return · ${t.short} ${vs} · ${Math.round(price * 100)}¢, model ${pct(pw)}` : `${pct(pw)} · ${t.short} ${vs}${price ? ` · Kalshi ${Math.round(price * 100)}¢` : ""}`});
+    }
+  }
+  teams.sort((a, b) => b.score - a.score);
+  return {players, teams: teams.slice(0, 40)};
+}
+function oddsBoard() {
+  if (!B) return "";
+  const mode = S.obMode || "likely";
+  const col = sport => {
+    if (!B.sports[sport]) return "";
+    const L = oddsLists(sport, mode);
+    const opt = (arr, ph) => `<option value="">${ph} (${arr.length})</option>` + arr.map(o => `<option value="${esc(o.v)}">${esc(o.t)}</option>`).join("");
+    return `<div class="obs"><b class="sp">${sport}</b>
+      <label>Players · ${mode === "pay" ? "biggest payout" : "most likely to hit"}<select onchange="obGo(this.value)">${opt(L.players, "Pick a player")}</select></label>
+      <label>Teams to win · ${mode === "pay" ? "biggest payout" : "highest win odds"}<select onchange="obGo(this.value)">${opt(L.teams, "Pick a team")}</select></label></div>`;
+  };
+  return `<div class="ob"><h3>Odds Board <span class="seg"><button class="${mode === "likely" ? "on" : ""}" onclick="S.obMode='likely';render()">Most likely</button><button class="${mode === "pay" ? "on" : ""}" onclick="S.obMode='pay';render()">Biggest payout</button></span>
+    <span class="note">${mode === "pay" ? "Longest Kalshi odds first (return if it hits), with the model's chance; long shots under 8% are left out." : "Highest model chance first."}</span></h3>
+    <div class="obg">${col("NFL")}${col("NBA")}</div></div>`;
+}
+function obGo(v) {
+  if (!v) return;
+  const [kind, sport, id] = v.split("|");
+  if (S.sport !== sport) { S.sport = sport; S.game = "all"; }
+  if (kind === "p") { render(); setTimeout(() => openPlayer(id), 30); }
+  else { S.tab = "games"; render(); setTimeout(() => { const e = document.getElementById("g-" + id); if (e) e.scrollIntoView({behavior: "smooth", block: "start"}); }, 60); }
 }
 
 // ---------------- V3.2: combos ----------------
@@ -1196,7 +1270,7 @@ function renderHow() {
     <p class="note">Every pick and projected stat is saved before the game. Kalshi picks are graded by Kalshi's settlement and cross-checked with the ESPN box score; if the two disagree the pick is flagged and left out of the record. Pick6 picks and projected stats are graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
     <h3 style="margin-top:14px">Version history</h3>
     <p class="note">Every update bumps the version: small batches of features add 0.1; a big overhaul moves to the next whole number.</p>
-    ${[["V3.2","Combos: tap + Combo on any Kalshi pick or team winner to build a combo slip with the model's combined chance and same-game warnings, then get a live market-maker price and buy it from the slip · The worker learns how Kalshi prices combo quotes from your own past combo fills and won't buy a combo until it can confirm that · Single orders switch to Kalshi's newer order endpoint automatically if the old one is retired"],["V3.1","⚡ One-click Kalshi orders: connect your own Cloudflare Worker on the My Bets tab, then every Kalshi pick, team winner and line gets a Buy button that opens an order ticket (live price, contracts, max price, cost and payout) and places the order only when you confirm · Worker caps order size and rejects the order if the price moved"],["V3.0","More data behind every projection: nflverse snap share, target and air-yards share, red-zone looks and expected TDs, Next Gen Stats, the official NFL injury report with practice status, ESPN depth charts and the official NBA injury report · Sportsbook consensus lines from The Odds API (optional key) · Bet buttons on every pick, team winner and line that open the exact Kalshi market with your side picked · Market Check bar on every pick: model vs Kalshi vs books · Far-from-market flag drops the tier a step · Kalshi picks graded by Kalshi's settlement with an ESPN cross-check; disagreements flagged, not counted · Data-sources strip, usage meters and a grading donut"],["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
+    ${[["V3.3","Odds Board at the top of Top Picks: NFL and NBA side by side, each with a players dropdown and a teams-to-win dropdown, switchable between most likely and biggest payout; pick one to jump to that player or game · New sorts: 'biggest payout' on Top Picks, 'highest win odds' and 'biggest payout' on team winners"],["V3.2","Combos: tap + Combo on any Kalshi pick or team winner to build a combo slip with the model's combined chance and same-game warnings, then get a live market-maker price and buy it from the slip · The worker learns how Kalshi prices combo quotes from your own past combo fills and won't buy a combo until it can confirm that · Single orders switch to Kalshi's newer order endpoint automatically if the old one is retired"],["V3.1","⚡ One-click Kalshi orders: connect your own Cloudflare Worker on the My Bets tab, then every Kalshi pick, team winner and line gets a Buy button that opens an order ticket (live price, contracts, max price, cost and payout) and places the order only when you confirm · Worker caps order size and rejects the order if the price moved"],["V3.0","More data behind every projection: nflverse snap share, target and air-yards share, red-zone looks and expected TDs, Next Gen Stats, the official NFL injury report with practice status, ESPN depth charts and the official NBA injury report · Sportsbook consensus lines from The Odds API (optional key) · Bet buttons on every pick, team winner and line that open the exact Kalshi market with your side picked · Market Check bar on every pick: model vs Kalshi vs books · Far-from-market flag drops the tier a step · Kalshi picks graded by Kalshi's settlement with an ESPN cross-check; disagreements flagged, not counted · Data-sources strip, usage meters and a grading donut"],["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
     <h3 style="margin-top:14px">Limits</h3>
     <p class="note">Free data doesn't say who guards whom, so "vs the defender" means what the defense allows to that position. nflverse stats update about once a day, so a game from last night may not be in the usage numbers yet. The Odds API free plan has 500 credits a month, so sportsbook lines refresh a few times a day for the soonest games. Injury news can break after the last refresh.</p></div></div>`;
 }
