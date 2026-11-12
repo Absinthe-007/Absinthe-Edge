@@ -946,7 +946,7 @@ async function comboQuote() {
   if (CT.quote && CT.quote.rfqId) { wcall("/combo/cancel", {rfqId: CT.quote.rfqId}).catch(() => {}); }
   CT.busy = true; CT.msg = null; CT.quote = null; drawComboTicket();
   try { CT.quote = await wcall("/combo/quote", {legs: CS.map(l => ({ticker: l.ticker, side: l.side})), count: CT.count}); }
-  catch (e) { CT.msg = {t: "err", m: e.message}; }
+  catch (e) { CT.msg = {t: "err", m: e.message}; window.__comboDebug = e.data && e.data.debug; try { console.warn("combo quote", JSON.stringify(e.data && e.data.debug)); } catch (x) {} }
   CT.busy = false; drawComboTicket();
 }
 async function comboBuy() {
