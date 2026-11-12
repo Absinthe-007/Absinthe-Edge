@@ -34,7 +34,7 @@ def _signer():
     if not key_id or not pem:
         return None
     from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.asymmetric import ed25519, padding
 
     if "-----BEGIN" not in pem:  # allow the key pasted without header lines
         pem = "-----BEGIN PRIVATE KEY-----\n" + pem + "\n-----END PRIVATE KEY-----"
@@ -42,9 +42,12 @@ def _signer():
 
     def headers(method, path):
         ts = str(int(time.time() * 1000))
-        sig = key.sign((ts + method + path).encode(),
-                       padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
-                       hashes.SHA256())
+        msg = (ts + method + path).encode()
+        if isinstance(key, ed25519.Ed25519PrivateKey):  # newer Kalshi keys
+            sig = key.sign(msg)
+        else:  # RSA keys
+            sig = key.sign(msg, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.DIGEST_LENGTH),
+                           hashes.SHA256())
         return {"KALSHI-ACCESS-KEY": key_id, "KALSHI-ACCESS-TIMESTAMP": ts,
                 "KALSHI-ACCESS-SIGNATURE": base64.b64encode(sig).decode()}
     return headers
