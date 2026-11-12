@@ -163,6 +163,16 @@ th:first-child,td:first-child,.l{text-align:left!important}
 .panel h3{margin:0 0 10px;font:700 18px var(--display);letter-spacing:.03em}
 tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{background:var(--brassbg)}
 .kpi.clk{cursor:pointer;transition:border-color .15s}.kpi.clk:hover{border-color:var(--brass)}
+.bet{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;min-width:0}
+.bet.cash{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}.bet.lost{opacity:.6}
+.bet .bh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.bet .bh .ttl{font:800 18px var(--display);letter-spacing:.02em;flex:1;min-width:180px}
+.sig{font:800 11px var(--body);letter-spacing:.08em;text-transform:uppercase;padding:5px 10px;border-radius:99px}
+.sig.cash{background:var(--brass);color:var(--ink)}.sig.hold{border:1px solid var(--line2);color:var(--chalk)}.sig.won{background:var(--morebg);color:var(--more)}.sig.lost{background:var(--lessbg);color:var(--less)}
+.bmon{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0 8px}.bmon>div{background:var(--ink2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.bmon span{display:block;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bmon b{font:800 19px var(--display)}
+.legs{display:grid;gap:6px;margin-top:10px}.leg{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;padding:6px 8px;border-radius:8px;background:var(--ink2)}
+.leg .lg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.leg small{color:var(--dim);margin-left:6px}
+@media (max-width:760px){.bmon{grid-template-columns:repeat(2,minmax(0,1fr))}.leg .mini,.leg .tag{display:none}.leg small{display:block;margin-left:0}}
 .fx{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
 .fx:last-child{border:0}
 /* modal */
@@ -211,7 +221,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
   </div>
   <div class="wrap"><nav class="tabs" id="tabs">
     <button data-t="picks">Top Picks</button><button data-t="players">Projections</button>
-    <button data-t="games">Games</button><button data-t="acc">Accuracy</button><button data-t="how">How it works</button>
+    <button data-t="games">Games</button><button data-t="bets">My Bets</button><button data-t="acc">Accuracy</button><button data-t="how">How it works</button>
   </nav></div>
 </header>
 
@@ -220,6 +230,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
   <section id="v-picks"></section>
   <section id="v-players" class="hide"></section>
   <section id="v-games" class="hide"></section>
+  <section id="v-bets" class="hide"></section>
   <section id="v-acc" class="hide"></section>
   <section id="v-how" class="hide"></section>
   <div class="footer">Model estimates for research and entertainment only, not financial or betting advice. Lines and prices move; check the app before you play. 21+. Gambling problem? Call 1-800-GAMBLER.</div>
@@ -229,6 +240,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
   <button data-t="picks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg>Picks</button>
   <button data-t="players"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Projections</button>
   <button data-t="games"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16M3 12h18"/></svg>Games</button>
+  <button data-t="bets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>My Bets</button>
   <button data-t="acc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Accuracy</button>
   <button data-t="how"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>How</button>
 </nav>
@@ -243,7 +255,7 @@ const fmt = (x, d=1) => x == null || isNaN(x) ? "—" : (+x).toFixed(d).replace(
 const LBL = {min:"MIN",points:"PTS",rebounds:"REB",assists:"AST",threes:"3PM",steals:"STL",blocks:"BLK",turnovers:"TO",pra:"PRA",pts_reb:"P+R",pts_ast:"P+A",reb_ast:"R+A",stl_blk:"S+B",pass_yds:"Pass Yds",pass_tds:"Pass TD",pass_cmp:"Comp",pass_att:"Att",ints:"INT",rush_yds:"Rush Yds",rush_att:"Carries",pass_rush_yds:"Pass+Rush",receptions:"Rec",targets:"Tgts",rec_yds:"Rec Yds",rush_rec_yds:"Rush+Rec",anytime_td:"TDs",long_rec:"Long Rec",tackles:"Tackles",sacks:"Sacks",fg_made:"FG",kick_pts:"Kick Pts"};
 const TYPE = {ml:"Winner",spread:"Spread",total:"Total",prop:"Player prop"};
 const GRADE_C = {A:"#3ddc97",B:"#9be37a",C:"#c9cfdc",D:"#ffb26b",F:"#ff6f6f"};
-let B = null, P = {};
+let B = null, P = {}, MB = null;
 let S = {sport:"NBA", tab:"picks", plat:"all", recOnly:true, game:"all", sort:"prob", q:"", pstat:"all", tierF:"all", group:"game"};
 try { Object.assign(S, JSON.parse(localStorage.getItem("ae-state") || "{}"), {q:"", game:"all"}); } catch(e) {}
 const save = () => { try { localStorage.setItem("ae-state", JSON.stringify({sport:S.sport, tab:S.tab, plat:S.plat, recOnly:S.recOnly, sort:S.sort, group:S.group, tierF:S.tierF})); } catch(e) {} };
@@ -546,6 +558,46 @@ function renderGames() {
   }).join("") : `<div class="empty">No upcoming games.</div>`);
 }
 
+// ---------------- my bets ----------------
+async function loadBets() {
+  try { const r = await fetch("data/mybets.json?t=" + Date.now(), {cache: "no-store"}); MB = r.ok ? await r.json() : null; } catch (e) { MB = null; }
+}
+const usd = x => x == null || isNaN(x) ? "—" : "$" + (+x).toFixed(2);
+const cents = x => x == null || isNaN(x) ? "—" : (x * 100 < 10 ? (x * 100).toFixed(1) : Math.round(x * 100)) + "¢";
+function renderBets() {
+  const el = $("#v-bets");
+  if (!MB) { el.innerHTML = `<h2>My Bets</h2><div class="panel"><h3>Connect your Kalshi account</h3><p class="note">Add two secrets to this repo on GitHub (Settings → Secrets and variables → Actions → New repository secret):</p>
+    <div class="fx"><span><b>KALSHI_API_KEY_ID</b></span><span>the key ID from kalshi.com → Account → API keys</span></div><div class="fx"><span><b>KALSHI_PRIVATE_KEY</b></span><span>the whole private key file Kalshi gave you</span></div>
+    <p class="note" style="margin-top:10px">Your bets show up here after the next update.</p></div>`; return; }
+  const bets = MB.bets || [], open = bets.filter(b => b.status !== "lost" && b.status !== "won");
+  const sum = k => bets.filter(b => b.status !== "lost").reduce((a, b) => a + (b[k] || 0), 0);
+  const cost = bets.reduce((a, b) => a + (b.cost || 0), 0), cashN = bets.filter(b => b.signal === "Cash out").length;
+  const tile = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  el.innerHTML = `<div class="kpis">${tile("Open bets", open.length, cashN ? `<span style="color:var(--brass)">${cashN} to cash out</span>` : "none to cash out")}${tile("Total in", usd(cost), "what you paid")}${tile("Sell now", usd(sum("sellValue")), "Kalshi's current bid")}${tile("Model value", usd(sum("fairValue")), "chance of winning × payout")}${tile("If all win", usd(sum("payout")), "total payout")}${tile("Cash", usd(MB.cash), "portfolio " + usd(MB.portfolio))}</div>
+  <h2>My Bets <span class="cnt">${bets.length} open on Kalshi · updated ${esc(new Date(MB.updated).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}))}</span></h2>
+  ${MB.error ? `<div class="empty" style="margin-bottom:14px">Couldn't reach Kalshi on the last update: ${esc(MB.error)}</div>` : ""}
+  ${bets.length ? bets.map(betCard).join("") : `<div class="empty">No open Kalshi bets right now.</div>`}
+  <p class="note"><b>Cash out</b> means Kalshi will pay more for the bet right now than the model thinks it's worth (its chance of winning × the payout). <b>Hold</b> means the model values it above the sell price, or nobody is bidding on it yet. Legs come from the model before tip-off or kickoff and from the live Kalshi price once a game starts. Legs from the same game tend to hit or miss together, so the model value for those is rougher. Model estimates only, not financial advice.</p>`;
+}
+const legName = t => String(t || "").replace(/^yes\s+/i, "").replace(/^no\s+(.*)$/i, "NOT $1");
+function betCard(b) {
+  const cls = {"Cash out":"cash", "Hold":"hold", "Won":"won", "Lost":"lost"}[b.signal] || "hold";
+  const done = b.legs.filter(l => l.state === "won").length;
+  const ttl = b.legs.length > 1 ? `${b.legs.length}-leg combo` : esc(b.legs[0].label);
+  const leg = l => { const ic = l.state === "won" ? `<b class="w">✓</b>` : l.state === "lost" ? `<b class="lz">✗</b>` : l.state === "live" ? `<b style="color:var(--warn)">●</b>` : `<span style="color:var(--dim)">○</span>`;
+    return `<div class="leg">${ic}<span class="lg">${esc(legName(l.label))}${l.game ? `<small>${esc(l.game)}${l.start && l.state === "pre" ? " · " + when(l.start) : ""}</small>` : ""}</span>
+      <span style="display:flex;align-items:center;gap:8px">${l.state === "won" || l.state === "lost" ? `<span class="${l.state === "won" ? "w" : "lz"}">${l.state === "won" ? "Hit" : "Missed"}</span>` : l.p == null ? `<span class="note">no read</span>` : `${bar(l.p)}<span class="num" style="min-width:36px;text-align:right">${pct(l.p)}</span><span class="tag" style="font-size:10px">${esc(l.src)}</span>`}</span></div>`; };
+  return `<div class="bet ${cls}"><div class="bh"><span class="sig ${cls}">${esc(b.signal)}</span><span class="ttl">${ttl}${b.legs.length > 1 ? ` <span class="note" style="font:500 12.5px var(--body)">${done}/${b.legs.length} legs hit so far</span>` : ""}</span>
+    <span class="note">${b.closes ? "settles " + esc(when(b.closes)) : ""}</span><a class="chip" href="https://kalshi.com/portfolio" target="_blank" rel="noopener">Open Kalshi →</a></div>
+    <div class="bmon"><div><span>Paid</span><b>${usd(b.cost)}</b><div class="note">${fmt(b.contracts, 0)} × ${cents(b.entry)}</div></div>
+      <div><span>Sell now</span><b>${b.bid > 0 ? usd(b.sellValue) : "—"}</b><div class="note">${b.bid > 0 ? cents(b.bid) + " bid" : "no buyer yet"}</div></div>
+      <div><span>Model value</span><b class="${b.fairValue != null && b.fairValue >= b.cost ? "up" : "dn"}">${usd(b.fairValue)}</b><div class="note">${b.fair == null ? "" : pct(b.fair, b.fair < .1 ? 1 : 0) + " to win"}</div></div>
+      <div><span>If it wins</span><b>${usd(b.payout)}</b><div class="note">profit ${usd(b.payout - b.cost)}</div></div>
+      <div><span>Status</span><b style="color:${b.status === "bad" ? "var(--less)" : b.status === "good" ? "var(--more)" : "var(--chalk)"}">${{bad:"Looks bad", good:"Ahead", ok:"Slipping", won:"Won", lost:"Lost", open:"Open"}[b.status] || "Open"}</b><div class="note">model value vs what you paid</div></div></div>
+    <div class="note" style="color:var(--chalk)">${esc(b.why)}${b.sameGame ? " · same-game legs move together" : ""}</div>
+    <div class="legs">${b.legs.map(leg).join("")}</div></div>`;
+}
+
 // ---------------- accuracy ----------------
 let T = null, tLoading = false;
 let G = {key: null, mode: "rec", res: "all"};   // selected accuracy group
@@ -667,6 +719,7 @@ function renderHow() {
     ${fx([["Lock","Pick6 68%+ · Kalshi edge 10¢+"],["Strong","Pick6 62%+ · Kalshi edge 7¢+"],["Lean","any other best play"]])}
     <p class="note" style="margin-top:10px"><b>Matchup grade (A–F)</b> rolls every adjustment for that stat into one letter: A means the setup lifts him 7%+, F means it costs him 7%+. <b>Streak</b> counts straight games over or under the line. <b>Line movement</b> shows how far a Pick6 line or Kalshi price has moved since this board first saw it, and whether it moved toward our side.</p>
     <p class="note"><b>Game sureness (A–D)</b> grades how much to trust each projected winner and final score, out of 100: how big the favorite is (45), whether the model agrees with the Vegas spread (25) and total (15), and how many games both teams have played (15), minus points for bad weather, back-to-backs and long injury lists. A = Strong (70+, and Vegas must back it up), B = Solid, C = Shaky, D = Toss-up. It's a guide to how sure the model is, not a track record yet.</p>
+    <p class="note"><b>My Bets</b> reads your open Kalshi bets with your own API key, kept in GitHub Secrets and never shown on the page. For each one it multiplies the model's chance for every leg into a value, and says <b>Cash out</b> when Kalshi's bid is above that value.</p>
     <h3 style="margin-top:14px">Self-checking</h3>
     <p class="note">Every pick and projected stat is saved before the game and graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
     <h3 style="margin-top:14px">Version history</h3>
@@ -681,11 +734,11 @@ function render() {
   save();
   document.querySelectorAll("#sportSeg button").forEach(b => b.classList.toggle("on", b.dataset.s === S.sport));
   document.querySelectorAll("#tabs button, #bnav button").forEach(b => b.classList.toggle("on", b.dataset.t === S.tab));
-  ["picks","players","games","acc","how"].forEach(t => $("#v-"+t).classList.toggle("hide", S.tab !== t));
+  ["picks","players","games","bets","acc","how"].forEach(t => $("#v-"+t).classList.toggle("hide", S.tab !== t));
   if (!B) return;
   if (S.game !== "all" && !gameOf(S.game)) S.game = "all";
-  kpis();
-  ({picks:renderPicks, players:renderPlayers, games:renderGames, acc:renderAcc, how:renderHow})[S.tab]();
+  if (S.tab === "bets") $("#kpis").innerHTML = ""; else kpis();
+  ({picks:renderPicks, players:renderPlayers, games:renderGames, bets:renderBets, acc:renderAcc, how:renderHow})[S.tab]();
 }
 document.querySelectorAll("#sportSeg button").forEach(b => b.onclick = () => { S.sport = b.dataset.s; S.game = "all"; S.pstat = "all"; render(); });
 document.querySelectorAll("#tabs button, #bnav button").forEach(b => b.onclick = () => { S.tab = b.dataset.t; render(); window.scrollTo({top:0}); });
@@ -704,6 +757,7 @@ let qt; $("#q").addEventListener("input", e => { clearTimeout(qt); qt = setTimeo
   if (B.version) $("#ver").textContent = "V" + B.version;
   render();
   try { P = await (await fetch("data/players.json?t=" + Date.now())).json(); } catch (e) { P = {}; }
+  await loadBets(); if (S.tab === "bets") render();
 })();
 // Auto-refresh: check for new data every 5 minutes, and whenever the tab comes back into view,
 // so a tab left open never shows stale games, records or grades.
@@ -721,6 +775,7 @@ async function refreshBoard() {
     if (B.version) $("#ver").textContent = "V" + B.version;
     try { P = await (await fetch("data/players.json?t=" + Date.now(), {cache: "no-store"})).json(); } catch (e) {}
     if (T) { try { T = await (await fetch("data/track.json?t=" + Date.now(), {cache: "no-store"})).json(); } catch (e) {} }
+    await loadBets();
     const y = window.scrollY; render(); window.scrollTo({top: y});
   } catch (e) {}
 }
