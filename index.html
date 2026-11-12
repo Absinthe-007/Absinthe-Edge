@@ -265,7 +265,7 @@ const GRADE_C = {A:"#3ddc97",B:"#9be37a",C:"#c9cfdc",D:"#ffb26b",F:"#ff6f6f"};
 let B = null, P = {}, MB = null, GT = null;
 let S = {sport:"NBA", tab:"picks", plat:"all", recOnly:true, game:"all", sort:"prob", q:"", pstat:"all", tierF:"all", group:"game"};
 try { Object.assign(S, JSON.parse(localStorage.getItem("ae-state") || "{}"), {q:"", game:"all"}); } catch(e) {}
-const save = () => { try { localStorage.setItem("ae-state", JSON.stringify({sport:S.sport, tab:S.tab, plat:S.plat, recOnly:S.recOnly, sort:S.sort, group:S.group, tierF:S.tierF})); } catch(e) {} };
+const save = () => { try { localStorage.setItem("ae-state", JSON.stringify({sport:S.sport, tab:S.tab, pview:S.pview, plat:S.plat, recOnly:S.recOnly, sort:S.sort, group:S.group, tierF:S.tierF})); } catch(e) {} };
 
 const toDate = t => new Date(t.endsWith("Z") ? t : t + "Z");
 const when = t => t ? toDate(t).toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"}) : "";
@@ -512,12 +512,15 @@ function renderPlayers() {
   const main = p => p.proj.points ?? p.proj.pass_yds ?? p.proj.rush_rec_yds ?? p.proj.rec_yds ?? 0;
   list.sort((a, b) => sk ? (b.proj[sk] ?? -1) - (a.proj[sk] ?? -1) : main(b) - main(a));
   const opts = s.games.map(g => `<option value="${g.id}" ${S.game===g.id?"selected":""}>${esc(g.name)} · ${when(g.start)}</option>`).join("");
+  const view = S.pview || "both";
+  const vopt = (v, l) => `<option value="${v}" ${view === v ? "selected" : ""}>${l}</option>`;
   $("#v-players").innerHTML = `<div class="filters">
+      <select class="chip" onchange="S.pview=this.value;render()" aria-label="Show">${vopt("both","Show: teams + players")}${vopt("teams","Show: team winners")}${vopt("players","Show: player projections")}</select>
       <select class="chip" onchange="S.game=this.value;render()" aria-label="Game"><option value="all">All games</option>${opts}</select>
-      <select class="chip" onchange="S.pstat=this.value;render()" aria-label="Sort by stat"><option value="all">Sort: biggest names</option>${[...keys].map(k=>`<option value="${k}" ${S.pstat===k?"selected":""}>Sort: ${LBL[k]||k}</option>`).join("")}</select>
+      <select class="chip" ${view === "teams" ? 'style="display:none"' : ""} onchange="S.pstat=this.value;render()" aria-label="Sort by stat"><option value="all">Sort: biggest names</option>${[...keys].map(k=>`<option value="${k}" ${S.pstat===k?"selected":""}>Sort: ${LBL[k]||k}</option>`).join("")}</select>
     </div>
-    ${teamWinners(q)}
-    <h2>Projected stat lines <span class="cnt">${list.length} players · gold boxes have a live line · tap for the breakdown</span></h2>
+    ${view !== "players" ? (teamWinners(q) || (view === "teams" ? `<div class="empty">No games for this filter.</div>` : "")) : ""}
+    ${view === "teams" ? "" : `<h2>Projected stat lines <span class="cnt">${list.length} players · gold boxes have a live line · tap for the breakdown</span></h2>
     ${list.length ? `<div class="grid">${list.slice(0, 200).map(p => `<article class="card pc" onclick="openPlayer('${p.id}')" style="--tc:${tc(p.team)}">
       <div class="art">${logo(p.team, "wm", "")}${headshot(p)}
         <div class="tl">${p.grade ? `<span class="tier Lean" title="Matchup grade"><span style="color:${GRADE_C[p.grade]}">${p.grade}</span> matchup</span>` : ""}</div>
@@ -525,7 +528,7 @@ function renderPlayers() {
         <div class="who"><div class="nm">${esc(p.name)}</div><div class="sb">${esc(p.pos)} · ${p.home?"vs":"@"} ${esc(p.opp)} · ${when((gameOf(p.gameId)||{}).start)}</div></div></div>
       <div class="cb"><div class="statline">${Object.entries(p.proj).map(([k,v]) => `<div class="sl ${(p.l10||{})[k] ? "has" : ""}"><div class="k">${LBL[k]||k}</div><div class="v">${fmt(v)}</div></div>`).join("")}</div>
       ${((p.rest||{}).tags||[]).length ? `<div class="chips">${p.rest.tags.map(t => `<span class="tag ${t[2]}" title="${esc(t[1])}">${esc(t[0])}</span>`).join("")}</div>` : ""}</div>
-    </article>`).join("")}</div>` : `<div class="empty">No players for this filter.</div>`}`;
+    </article>`).join("")}</div>` : `<div class="empty">No players for this filter.</div>`}`}`;
 }
 
 // ---------------- player modal ----------------
