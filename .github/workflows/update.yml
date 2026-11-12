@@ -12,14 +12,13 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: board
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    concurrency:
+      group: board
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -94,3 +93,23 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # GitHub often skips scheduled runs, so each run queues the next one itself.
+  # Only one waiting timer exists at a time: a newer run cancels the older timer.
+  next-run:
+    needs: deploy
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      actions: write
+    concurrency:
+      group: heartbeat
+      cancel-in-progress: true
+    steps:
+      - name: Wait about 28 minutes, then start the next update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 1680
+          gh workflow run update.yml --repo "${{ github.repository }}" --ref main
