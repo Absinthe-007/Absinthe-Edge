@@ -347,10 +347,18 @@ def _px(m, k):
     return v
 
 
+def kalshi_slug(series):
+    """Kalshi's web URL slug is the series title, lower-cased and hyphenated ('NFL Game' -> 'nfl-game')."""
+    d = get(f"{KALSHI}/series/{series}") or {}
+    t = ((d.get("series") or {}).get("title") or "").lower()
+    return re.sub(r"[^a-z0-9]+", "-", t).strip("-")
+
+
 def kalshi(sport):
     rows = []
     allseries = {**{s: ("prop", k) for s, k in KALSHI_PROPS[sport].items()}, **{s: ("game", k) for s, k in KALSHI_GAME[sport].items()}}
     res = pmap(lambda s: (s, kalshi_series(s)), list(allseries), 6)
+    slugs = dict(zip(allseries, pmap(kalshi_slug, list(allseries), 6)))
     for series, mkts in res:
         kind, key = allseries[series]
         for m in mkts:
@@ -362,7 +370,8 @@ def kalshi(sport):
                    "code": code, "ticker": m["ticker"], "event": m["event_ticker"], "yesBid": yb or 0.0, "yesAsk": ya,
                    "noAsk": round(1 - (yb or 0.0), 4), "title": m.get("title") or m.get("yes_sub_title"),
                    "close": (m.get("occurrence_datetime") or m.get("expected_expiration_time") or "")[:19],
-                   "url": f"https://kalshi.com/markets/{series.lower()}"}
+                   "url": (f"https://kalshi.com/markets/{series.lower()}/{slugs[series]}/{m['event_ticker'].lower()}?marketTicker={m['ticker']}"
+                           if slugs.get(series) else f"https://kalshi.com/markets/{series.lower()}")}
             strike = num(m.get("floor_strike"))
             sub = m.get("yes_sub_title") or m.get("title") or ""
             if kind == "prop":

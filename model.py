@@ -234,7 +234,7 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
                 if ctx.get("road", 0) >= 2:
                     add("Road trip", 0.99, f"Road game #{ctx['road']} in a row")
         if extra:
-            for f in extra(k, grp):
+            for f in extra(k, grp, base):
                 add(*f)
         mult = 1.0
         for f in factors:

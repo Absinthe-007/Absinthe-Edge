@@ -104,7 +104,7 @@ def winner_pick(g, game_picks):
         score += max(-15, min(15, edge * 150))
     score = jround(max(0, min(100, score)))
     gr = "A" if score >= 72 else "B" if score >= 58 else "C" if score >= 44 else "D"
-    return {"sureGr": q[0], "sureS": q[1], "pickGr": gr, "pickS": score, "pick": w["abbr"],
+    return {"sureGr": q[0], "sureS": q[1], "pickGr": gr, "pickS": score, "pick": w["abbr"], "tk": (mk or {}).get("ticker"),
             "pWin": round(pr["pHome"] if home_wins else 1 - pr["pHome"], 3),
             "price": price, "edge": None if edge is None else round(edge, 3)}
 
@@ -150,8 +150,31 @@ def finals(sport, day):
     return _sb[key]
 
 
+KALSHI = "https://api.elections.kalshi.com/trade-api/v2"
+KALSHI_WAIT_H = 30  # how long to wait for Kalshi to settle before grading on ESPN alone
+
+
+def kalshi_results(tickers):
+    out = {}
+    tickers = sorted({t for t in tickers if t})
+    for i in range(0, len(tickers), 50):
+        try:
+            r = requests.get(f"{KALSHI}/markets", params={"tickers": ",".join(tickers[i:i + 50]), "limit": 200}, timeout=25)
+            for m in (r.json() or {}).get("markets") or []:
+                res = (m.get("result") or "").lower()
+                if res in ("yes", "no"):
+                    out[m["ticker"]] = res
+                elif (m.get("status") or "").lower() in ("settled", "finalized", "determined"):
+                    out[m["ticker"]] = "void"
+        except Exception:
+            pass
+    return out
+
+
 def grade(pending, rows, now):
     done = []
+    due = [p for p in pending.values() if parse_t(p["t"]) and now >= parse_t(p["t"]) + timedelta(hours=GRADE_AFTER_H.get(p["s"], 3))]
+    kres = kalshi_results([p.get("tk") for p in due])
     for gid, p in list(pending.items()):
         st = parse_t(p["t"])
         if not st or now < st + timedelta(hours=GRADE_AFTER_H.get(p["s"], 3)):
@@ -164,10 +187,22 @@ def grade(pending, rows, now):
             if now > st + timedelta(hours=GIVE_UP_H):
                 done.append(gid)
             continue
+        kr = kres.get(p.get("tk")) if p.get("tk") else None
+        if p.get("tk") and kr is None and now < st + timedelta(hours=KALSHI_WAIT_H):
+            continue  # final is in, wait for Kalshi to settle so both can be compared
         a, h = sc.get("away", 0), sc.get("home", 0)
         winner = p["home"] if h > a else p["away"] if a > h else None
-        row = dict(p, actA=a, actH=h, d=(st - timedelta(hours=5)).date().isoformat(),
-                   res="push" if winner is None else ("w" if winner == p["pick"] else "l"),
+        res = "push" if winner is None else ("w" if winner == p["pick"] else "l")
+        src = "E"
+        if kr in ("yes", "no"):
+            rk = "w" if kr == "yes" else "l"
+            if res in ("w", "l") and rk != res:
+                res, src = "disp", "X"  # ESPN and Kalshi disagree: flagged, not counted
+            else:
+                res, src = rk, "KE"
+        elif kr == "void":
+            src = "KE" if res == "push" else "E"
+        row = dict(p, actA=a, actH=h, d=(st - timedelta(hours=5)).date().isoformat(), res=res, src=src,
                    scoreErr=round((abs(p["projA"] - a) + abs(p["projH"] - h)) / 2, 1),
                    totErr=round(abs((p["projA"] + p["projH"]) - (a + h)), 1),
                    marErr=round(abs((p["projH"] - p["projA"]) - (h - a)), 1))
@@ -203,6 +238,8 @@ def summarize(rows):
         rs = [x for x in rows if sport == "all" or x["s"] == sport]
         out[sport] = {
             "all": agg(rs),
+            "disputed": sum(1 for x in rs if x.get("res") == "disp"),
+            "kalshiChecked": sum(1 for x in rs if x.get("src") in ("KE", "X")),
             "sure": {g: agg([x for x in rs if x["sureGr"] == g]) for g in "ABCD"},
             "pick": {g: agg([x for x in rs if x["pickGr"] == g]) for g in "ABCD"},
             "conf": {lab: agg([x for x in rs if lo <= x["pWin"] < hi]) for lo, hi, lab in BUCKETS},

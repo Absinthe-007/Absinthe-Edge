@@ -9,12 +9,16 @@ from datetime import datetime, timedelta, timezone
 import sources as S
 import model as M
 import extras as X
+import feeds as F
 
-VERSION = "2.1"
+VERSION = "3.1"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
 GIVE_UP_H = 72
+KALSHI_WAIT_H = 30  # wait this long after start for Kalshi to settle before grading a Kalshi pick on ESPN alone
+FAR_FROM_MARKET = 0.20
+DOWN = {"Lock": "Strong", "Strong": "Lean"}
 
 
 def et_code(t):
@@ -72,6 +76,19 @@ def build_sport(sport, now, track, geo):
     stand = S.standings(sport)
     teams = S.teams_list(sport)
     roster = S.rosters(sport, teams)
+    # V2.2 feeds: official injury reports (+ nflverse usage, depth charts) before anything reads injuries
+    prof, feeds_meta = {}, {}
+    try:
+        if sport == "NFL":
+            prof, nm = F.nfl_profiles(now, roster)
+            F.apply_nfl_injuries(roster, prof)
+            feeds_meta["nflverseWeek"] = nm.get("week") if nm else None
+        else:
+            rep_, stamp = F.nba_injury_report(now, teams)
+            F.apply_nba_injuries(roster, rep_)
+            feeds_meta["nbaReport"] = stamp
+    except Exception:
+        S.log(f"[feeds] {sport} failed\n" + traceback.format_exc())
     by_name = {}
     for p in roster.values():
         by_name.setdefault(p["nn"], []).append(p)
@@ -93,6 +110,12 @@ def build_sport(sport, now, track, geo):
     # lines
     p6props, payouts = S.pick6(sport)
     krows = S.kalshi(sport)
+    try:
+        cons, odds_meta = F.odds_consensus(sport, games, now)
+    except Exception:
+        S.log(f"[odds] {sport} failed\n" + traceback.format_exc())
+        cons, odds_meta = {}, None
+    feeds_meta["odds"] = odds_meta
 
     # contexts
     sched = {}
@@ -165,7 +188,8 @@ def build_sport(sport, now, track, geo):
         gl = logs.get(aid) or []
         tctx = ctx.get((g["id"], team)) or {}
         rest = X.player_rest(sport, gl, g, sched.get(g["home"]["id"] if is_home else g["away"]["id"], []), usage, aid, team)
-        ext = X.extra_factors(sport, rest, injc.get((g["id"], team), {}), pacec[g["id"]][1], tctx.get("b2b"))
+        ext = combine(X.extra_factors(sport, rest, injc.get((g["id"], team), {}), pacec[g["id"]][1], tctx.get("b2b")),
+                      F.nfl_factors(prof.get(aid)) if sport == "NFL" else F.nba_factors(pl))
         grp, proj = M.project_player(sport, pl, gl, g, is_home, opp, dvp, tctx, wx.get(g["id"]), stand, implied, ext)
         if not proj:
             continue
@@ -174,7 +198,8 @@ def build_sport(sport, now, track, geo):
         rk = (dvp["ranks"].get(opp) or {}).get(grp)
         players[aid] = {"id": aid, "name": pl["name"], "team": team, "opp": opp, "home": is_home, "gameId": g["id"], "pos": pl["pos"], "grp": grp,
                         "img": pl["img"], "dkImg": dk, "inj": pl.get("inj"), "proj": {k: round(v["proj"], 1) for k, v in proj.items()},
-                        "oppRank": rk, "rest": {k: v for k, v in rest.items()},
+                        "oppRank": rk, "rest": {k: v for k, v in rest.items()}, "injSrc": pl.get("injSrc"),
+                        "depth": (prof.get(aid) or {}).get("depth"),
                         "l10": {k: list(reversed(proj[k]["l10"])) for k in proj if k in lines_by_pid.get(aid, ())}}
         mainkey = next((k for k in ("points", "pass_yds", "rush_rec_yds", "rec_yds", "tackles", "kick_pts") if k in proj), keys[0])
         mm = 1.0
@@ -191,7 +216,8 @@ def build_sport(sport, now, track, geo):
                         "recent": [row(x, keys) for x in gl[:10]],
                         "vs": [row(x, keys) + [x["season"]] for x in gl if x["opp"] in S.abbr_set(sport, opp)][:12],
                         "ctx": ctx.get((g["id"], team)), "gp": len(cur), "rest": rest,
-                        "inj": {k: v for k, v in injc.get((g["id"], team), {}).items() if k in ("mates", "foes")}}
+                        "inj": {k: v for k, v in injc.get((g["id"], team), {}).items() if k in ("mates", "foes")},
+                        "feeds": {k: v for k, v in (prof.get(aid) or {}).items() if k in ("snap", "share", "rz", "ngs", "inj", "depth")}}
 
     # picks
     calib = track.get("calib") or {}
@@ -249,8 +275,17 @@ def build_sport(sport, now, track, geo):
         mid = M.market_mid(p) if p["platform"] == "Kalshi" else ladder_p(p["pid"], p["key"], p["line"])
         base["mkt"] = round(mid, 3) if mid is not None else None
         base["model"] = round(pm, 3)
-        if mid is not None:
-            pm = M.blend(pm, mid)
+        co = cons.get((S.norm_name(pl["name"]), p["key"]))
+        cp = F.cons_p_at(co, p["key"], p["line"], proj["sd"], p["key"] in M.COUNT) if co else None
+        if co:
+            base["cons"] = {"line": co["line"], "p": round(cp, 3), "books": co["books"]}
+            if p["platform"] == "Pick6" and abs(co["line"] - p["line"]) >= (1.5 if p["key"] in M.CV and p["key"] not in M.COUNT else 0.5):
+                base["consGap"] = round(co["line"] - p["line"], 1)
+        refs = [x for x in (mid, cp) if x is not None]
+        ref = sum(refs) / len(refs) if refs else None
+        if ref is not None:
+            base["far"] = abs(base["model"] - ref) >= FAR_FROM_MARKET
+            pm = M.blend(pm, ref)
         if p["platform"] == "Pick6":
             side = "MORE" if pm >= 0.5 else "LESS"
             prob = pm if side == "MORE" else 1 - pm
@@ -271,6 +306,8 @@ def build_sport(sport, now, track, geo):
             p["model"] = round(1 - p["model"], 3)
             if p.get("mkt") is not None:
                 p["mkt"] = round(1 - p["mkt"], 3)
+            if p.get("cons"):
+                p["cons"]["p"] = round(1 - p["cons"]["p"], 3)
     # drop far-out ladder rungs nobody should play
     picks = [p for p in picks if p["platform"] == "Pick6" or 0.04 <= p["yesAsk"] <= 0.96]
     # the rung priced closest to 50/50 is the "main" line used to grade the model's lean
@@ -309,6 +346,8 @@ def build_sport(sport, now, track, geo):
             p["mvOurs"] = toward > 0
     for p in picks:
         p["tier"] = X.tier(p)
+        if p.get("far") and p["tier"] in DOWN:
+            p["tier"] = DOWN[p["tier"]]  # model and market disagree a lot: one confidence step lower
     gpicks = []
     for m in kgame:
         g = games[m["gameId"]]
@@ -316,12 +355,13 @@ def build_sport(sport, now, track, geo):
         if p is None:
             continue
         model_p = p
+        far = abs(model_p - M.market_mid(m)) >= FAR_FROM_MARKET
         p = M.blend(p, M.market_mid(m), 0.35)
         ks = M.kalshi_side(p, m, 0.04)
         gpicks.append({"id": m["id"], "platform": "Kalshi", "sport": sport, "gameId": g["id"], "type": m["key"], "label": label,
                        "line": m["line"], "team": m.get("team"), "title": m["title"], "ticker": m["ticker"], "url": m["url"],
                        "yesAsk": m["yesAsk"], "noAsk": m["noAsk"], "start": g["start"], "rawP": round(model_p, 3),
-                       "model": round(model_p, 3), "mkt": round(M.market_mid(m), 3), **ks})
+                       "model": round(model_p, 3), "mkt": round(M.market_mid(m), 3), "far": far, **ks})
 
     gmain = {}
     for p in gpicks:
@@ -344,6 +384,8 @@ def build_sport(sport, now, track, geo):
             p["alt"] = True
     for p in gpicks:
         p["tier"] = X.tier(p)
+        if p.get("far") and p["tier"] in DOWN:
+            p["tier"] = DOWN[p["tier"]]
 
     for gid, g in games.items():
         g["proj"] = gproj[gid]
@@ -359,7 +401,16 @@ def build_sport(sport, now, track, geo):
         g.pop("espnWeather", None)
     S.log(f"[picks] {sport}: {len(picks)} prop picks ({sum(p['rec'] for p in picks)} recommended), {sum(p['rec'] for p in gpicks)} game picks")
     return {"games": sorted(games.values(), key=lambda g: g["start"]), "players": players, "details": details, "picks": picks,
-            "gamePicks": gpicks, "breakeven": payouts, "dvpRanks": dvp["ranks"], "nBoxes": len(boxes)}
+            "gamePicks": gpicks, "breakeven": payouts, "dvpRanks": dvp["ranks"], "nBoxes": len(boxes), "feeds": feeds_meta}
+
+
+def combine(*fns):
+    def f(k, grp, base=None):
+        out = []
+        for fn in fns:
+            out += fn(k, grp, base)
+        return out
+    return f
 
 
 # ======================================================================================
@@ -395,7 +446,8 @@ def conf_bucket(p):
 
 def bump(agg, key, res, profit=None):
     r = agg.setdefault(key, {"w": 0, "l": 0, "p": 0, "v": 0, "stake": 0.0, "pl": 0.0})
-    r[{"w": "w", "l": "l", "push": "p", "void": "v"}[res]] += 1
+    k = {"w": "w", "l": "l", "push": "p", "void": "v", "disp": "d"}[res]
+    r[k] = r.get(k, 0) + 1
     if profit is not None and res in ("w", "l"):
         r["stake"] += 1
         r["pl"] = round(r["pl"] + profit, 3)
@@ -417,7 +469,7 @@ def save_pending(track, board, now):
                              "nm": p.get("player") or p.get("label"), "k": p.get("key") or p.get("type"), "line": p["line"],
                              "side": p["side"], "prob": p["prob"], "raw": p.get("rawP"), "rec": bool(p["rec"]), "price": p.get("price"),
                              "team": p.get("team"), "stat": p.get("stat") or p.get("label"), "type": "prop" if p.get("pid") else p.get("type"),
-                             "tier": p.get("tier")}
+                             "tier": p.get("tier"), "tk": p.get("ticker")}
         for aid, pl in b["players"].items():
             g = next((x for x in b["games"] if x["id"] == pl["gameId"]), None)
             if g and S.parse_t(g["start"]) > now:
@@ -438,18 +490,36 @@ def grade(track, now):
         if gid not in cache:
             cache[gid] = S.box_summary(sport, gid)
         return cache[gid]
+    def ticker(pid, e):
+        if e["pf"] != "Kalshi":
+            return None
+        return e.get("tk") or (pid[2:] if pid.startswith("k-") else None)
+    due = {pid: e for pid, e in pend.items() if S.parse_t(e["t"]) and now >= S.parse_t(e["t"]) + timedelta(hours=GRADE_AFTER_H[e["s"]])}
+    try:
+        kres = F.kalshi_results([ticker(pid, e) for pid, e in due.items()])
+    except Exception:
+        S.log("[grade] Kalshi results failed\n" + traceback.format_exc())
+        kres = {}
+    nk = nx = 0
     for pid, e in list(pend.items()):
         t = S.parse_t(e["t"])
         if not t or now < t + timedelta(hours=GRADE_AFTER_H[e["s"]]):
             continue
+        tk = ticker(pid, e)
+        kr = kres.get(tk) if tk else None
         b = box(e["s"], e["g"])
-        if not b.get("done"):
+        if not b.get("done") and kr is None:
             if now > t + timedelta(hours=GIVE_UP_H):
                 del pend[pid]
             continue
+        if tk and kr is None and now < t + timedelta(hours=KALSHI_WAIT_H):
+            continue  # ESPN has the final; give Kalshi time to settle so both can be checked
         del pend[pid]
         val = None
-        if e["type"] == "prop":
+        res_e = None
+        if not b.get("done"):
+            pass
+        elif e["type"] == "prop":
             st = next((tm[e["pid"]] for tm in b["teams"].values() if e["pid"] in tm), None)
             val = S.box_value(e["s"], e["k"], st) if st else "dnp"
         else:
@@ -463,18 +533,34 @@ def grade(track, now):
                     if mine:
                         other = abbrs[1] if mine == abbrs[0] else abbrs[0]
                         val = sc[mine] - sc[other]
-        if val is None or val == "dnp":
+        if b.get("done"):
+            if val is None or val == "dnp":
+                res_e = "void"
+            else:
+                if e["type"] == "ml":
+                    yes = val > 0
+                else:
+                    yes = val > e["line"]
+                hit_yes_side = e["side"] in ("YES", "MORE")
+                if e["type"] != "ml" and val == e["line"]:
+                    res_e = "push"
+                else:
+                    res_e = "w" if yes == hit_yes_side else "l"
+        # Kalshi's settlement decides Kalshi picks; ESPN cross-checks it. A disagreement is flagged, not counted.
+        src = "E"
+        res = res_e
+        if kr in ("yes", "no"):
+            res_k = "w" if (kr == "yes") == (e["side"] == "YES") else "l"
+            nk += 1
+            if res_e in ("w", "l") and res_e != res_k:
+                res, src = "disp", "X"
+                nx += 1
+            else:
+                res, src = res_k, ("KE" if res_e in ("w", "l") else "K")
+        elif kr == "void":
+            res, src = "void", "K"
+        if res is None:
             res = "void"
-        else:
-            if e["type"] == "ml":
-                yes = val > 0
-            else:
-                yes = val > e["line"]
-            hit_yes_side = e["side"] in ("YES", "MORE")
-            if e["type"] != "ml" and val == e["line"]:
-                res = "push"
-            else:
-                res = "w" if yes == hit_yes_side else "l"
         profit = None
         if e["pf"] == "Kalshi" and e.get("price") and res in ("w", "l"):
             profit = (1 - e["price"]) / e["price"] if res == "w" else -1.0
@@ -482,7 +568,9 @@ def grade(track, now):
         tag = "rec" if e["rec"] else "lean"
         for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}") + ((f"tier|{e['tier']}",) if e.get("tier") else ()):
             bump(agg, f"{tag}|{key}", res, profit)
-        if res in ("w", "l"):
+        if res == "disp":
+            pass
+        elif res in ("w", "l"):
             day = (t - timedelta(hours=5)).date().isoformat()
             d = daily.setdefault(day, {"rec": [0, 0], "lean": [0, 0]})
             d[tag][0 if res == "w" else 1] += 1
@@ -497,7 +585,7 @@ def grade(track, now):
             bb[0] += 1
             bb[1] += 1 if res == "w" else 0
         recent.append([e["s"], e["pf"], e["nm"], e["stat"], e["line"], e["side"], e["prob"], val if not isinstance(val, str) else None, res,
-                       e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier")])
+                       e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier"), src])
     for key, e in list(pproj.items()):
         t = S.parse_t(e["t"])
         if not t or now < t + timedelta(hours=GRADE_AFTER_H[e["s"]]):
@@ -532,7 +620,7 @@ def grade(track, now):
     track["calib"] = calib
     if n:
         track["gradedAt"] = now.isoformat()[:19] + "Z"
-    S.log(f"[grade] graded {n}; pending {len(pend)} picks, {len(pproj)} projections")
+    S.log(f"[grade] graded {n} ({nk} by Kalshi settlement, {nx} disputed); pending {len(pend)} picks, {len(pproj)} projections")
 
 
 def main():
@@ -578,7 +666,7 @@ def summary(track):
     def pct(k):
         r = agg.get(k) or {}
         n = r.get("w", 0) + r.get("l", 0)
-        return {"w": r.get("w", 0), "l": r.get("l", 0), "p": r.get("p", 0), "v": r.get("v", 0), "pct": round(r["w"] / n, 4) if n else None,
+        return {"w": r.get("w", 0), "l": r.get("l", 0), "p": r.get("p", 0), "v": r.get("v", 0), "d": r.get("d", 0), "pct": round(r["w"] / n, 4) if n else None,
                 "roi": round(r["pl"] / r["stake"], 4) if r.get("stake") else None}
     out = {"agg": {k: pct(k) for k in agg}, "daily": track.get("daily", {}), "bins": track.get("bins", {}),
            "projErr": track.get("projErr", {}), "recent": track.get("recent", [])[-250:], "calib": track.get("calib", {}),

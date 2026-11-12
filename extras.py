@@ -235,7 +235,7 @@ def player_rest(sport, gl, game, sched, usage, aid, team):
 
 def extra_factors(sport, rest, inj, pace_mult, game_ctx_b2b):
     """Returns f(k, grp) -> list of [name, mult, note] for model.project_player."""
-    def f(k, grp):
+    def f(k, grp, base=None):
         res = []
         if k == "min" and sport == "NBA":
             if rest.get("missed", 0) >= 2:
