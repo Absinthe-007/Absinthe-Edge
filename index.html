@@ -220,7 +220,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 <body>
 <header>
   <div class="wrap hrow">
-    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V1.2</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
+    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V2.1</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
     <div class="seg" id="sportSeg"><button data-s="NFL">NFL</button><button data-s="NBA">NBA</button></div>
     <div class="grow"></div>
     <input class="search" id="q" placeholder="Search player or team" aria-label="Search player or team">
@@ -262,7 +262,7 @@ const fmt = (x, d=1) => x == null || isNaN(x) ? "—" : (+x).toFixed(d).replace(
 const LBL = {min:"MIN",points:"PTS",rebounds:"REB",assists:"AST",threes:"3PM",steals:"STL",blocks:"BLK",turnovers:"TO",pra:"PRA",pts_reb:"P+R",pts_ast:"P+A",reb_ast:"R+A",stl_blk:"S+B",pass_yds:"Pass Yds",pass_tds:"Pass TD",pass_cmp:"Comp",pass_att:"Att",ints:"INT",rush_yds:"Rush Yds",rush_att:"Carries",pass_rush_yds:"Pass+Rush",receptions:"Rec",targets:"Tgts",rec_yds:"Rec Yds",rush_rec_yds:"Rush+Rec",anytime_td:"TDs",long_rec:"Long Rec",tackles:"Tackles",sacks:"Sacks",fg_made:"FG",kick_pts:"Kick Pts"};
 const TYPE = {ml:"Winner",spread:"Spread",total:"Total",prop:"Player prop"};
 const GRADE_C = {A:"#3ddc97",B:"#9be37a",C:"#c9cfdc",D:"#ffb26b",F:"#ff6f6f"};
-let B = null, P = {}, MB = null;
+let B = null, P = {}, MB = null, GT = null;
 let S = {sport:"NBA", tab:"picks", plat:"all", recOnly:true, game:"all", sort:"prob", q:"", pstat:"all", tierF:"all", group:"game"};
 try { Object.assign(S, JSON.parse(localStorage.getItem("ae-state") || "{}"), {q:"", game:"all"}); } catch(e) {}
 const save = () => { try { localStorage.setItem("ae-state", JSON.stringify({sport:S.sport, tab:S.tab, plat:S.plat, recOnly:S.recOnly, sort:S.sort, group:S.group, tierF:S.tierF})); } catch(e) {} };
@@ -606,6 +606,7 @@ function renderGames() {
 
 // ---------------- my bets ----------------
 async function loadBets() {
+  try { const r = await fetch("data/gametrack.json?t=" + Date.now(), {cache: "no-store"}); GT = r.ok ? await r.json() : null; } catch (e) { GT = null; }
   try { const r = await fetch("data/mybets.json?t=" + Date.now(), {cache: "no-store"}); MB = r.ok ? await r.json() : null; } catch (e) { MB = null; }
 }
 const usd = x => x == null || isNaN(x) ? "—" : "$" + (+x).toFixed(2);
@@ -712,6 +713,30 @@ function aggRows(prefix, keys, label) {
     .map(([k, n, r, l]) => { const key = prefix + k, on = G.key === key;
       return `<tr class="clk${on ? " sel" : ""}" onclick="pickGroup('${esc(key)}','${esc(n).replace(/'/g, "")}')" title="Show these picks"><td class="l">${esc(n)} <span class="note">›</span></td><td>${r.w||0}-${r.l||0}</td><td>${pct(r.pct,1)}</td><td>${bar(r.pct||0)}</td><td>${r.roi!=null?(r.roi>=0?"+":"")+pct(r.roi,1):"—"}</td><td>${(l.w||0)+(l.l||0) ? `<a href="javascript:void 0" onclick="event.stopPropagation();pickGroup('${esc(key)}','${esc(n).replace(/'/g, "")}','all')">${l.w||0}-${l.l||0}</a>` : "—"}</td><td>${pct(l.pct,1)}</td></tr>`; }).join("");
 }
+// ---------------- game winner tracker ----------------
+function gtSection() {
+  const sm = GT && GT.summary && GT.summary[S.sport];
+  const waiting = GT ? Object.values(GT.pending || {}).filter(p => p.s === S.sport).length : 0;
+  const head = `<h2>Game winners <span class="cnt">projected winner and grades saved before each ${S.sport} game, graded after the final</span></h2>`;
+  if (!sm || !sm.all || !sm.all.n) return head + `<div class="empty">Tracking started${GT && GT.since ? " " + esc(GT.since) : ""}. ${waiting} ${S.sport} games saved and waiting on finals; results show up here a few hours after they end.</div>`;
+  const a = sm.all, hp = x => x && x.n ? pct(x.hit) : "—";
+  const gap = x => { if (!x || !x.n) return ""; const d = x.hit - x.exp; return `<span class="${d >= 0 ? "up" : "dn"}">${d >= 0 ? "+" : ""}${Math.round(d * 100)}</span>`; };
+  const roi = x => x && x.roi != null ? `<span class="${x.roi >= 0 ? "up" : "dn"}">${x.roi >= 0 ? "+" : ""}${pct(x.roi, 1)}</span>` : "—";
+  const gRow = (lab, x, c) => `<tr><td class="l">${c ? `<span class="grade" style="background:${GRADE_C[c]}22;color:${GRADE_C[c]}">${c}</span>` : ""}${lab}</td><td>${x && x.n ? `${x.w}-${x.l}` : "—"}</td><td>${hp(x)}</td><td>${x && x.n ? bar(x.hit) : ""}</td><td>${x && x.n ? pct(x.exp) : "—"}</td><td>${gap(x)}</td><td>${x && x.n ? "±" + fmt(x.scoreErr) : "—"}</td><td>${roi(x)}</td></tr>`;
+  const th = `<thead><tr><th class="l">Group</th><th>Record</th><th>Hit %</th><th></th><th>Expected</th><th>Gap</th><th>Score miss</th><th>Kalshi ROI</th></tr></thead>`;
+  const rows = (GT.rows || []).filter(r => r.s === S.sport).slice(-40).reverse();
+  const tile = (l, v, s2) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s2}</div></div>`;
+  return head + `<div class="kpis">${tile("Winners hit", pct(a.hit), `${a.w}-${a.l} · expected ${pct(a.exp)}`)}${tile("Score miss", "±" + fmt(a.scoreErr), "points per team")}${tile("Total miss", "±" + fmt(a.totErr), "combined points")}${tile("Margin miss", "±" + fmt(a.marErr), "points")}${tile("Kalshi ROI", a.roi != null ? (a.roi >= 0 ? "+" : "") + pct(a.roi, 1) : "—", "buying every projected winner")}${tile("Waiting", waiting, "games not final yet")}</div>
+    <div class="panel" style="margin:12px 0"><h3>Tuning hints</h3>${(sm.notes || []).map(n => `<p class="note" style="color:var(--chalk);margin:4px 0">• ${esc(n)}</p>`).join("")}</div>
+    <div class="tbl"><table>${th}<tbody>
+      ${["A","B","C","D"].map(c => gRow({A:"Best look",B:"Good look",C:"Meh",D:"Pass"}[c] + " (pick grade)", sm.pick[c], c)).join("")}
+      ${["A","B","C","D"].map(c => gRow({A:"Strong",B:"Solid",C:"Shaky",D:"Toss-up"}[c] + " (sureness)", sm.sure[c], c)).join("")}
+      ${["70+","65-70","60-65","55-60","50-55"].map(k => gRow("Model said " + k + "%", sm.conf[k])).join("")}
+    </tbody></table></div>
+    ${rows.length ? `<div class="tbl" style="max-height:420px;margin-top:12px"><table><thead><tr><th class="l">Date</th><th class="l">Game</th><th class="l">Pick</th><th>Chance</th><th>Grade</th><th class="l">Projected</th><th class="l">Final</th><th class="l">Result</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="l">${esc((r.d || "").slice(5))}</td><td class="l">${esc(r.away)} @ ${esc(r.home)}</td><td class="l">${esc(r.pick)}</td><td>${pct(r.pWin)}</td><td><span class="grade" style="background:${GRADE_C[r.pickGr]}22;color:${GRADE_C[r.pickGr]}">${r.pickGr}</span></td><td class="l">${Math.round(r.projA)}–${Math.round(r.projH)}</td><td class="l">${Math.round(r.actA)}–${Math.round(r.actH)}</td><td class="l ${r.res === "w" ? "w" : r.res === "l" ? "lz" : ""}">${{w:"✓ Hit", l:"✗ Miss", push:"Tie"}[r.res]}</td></tr>`).join("")}
+    </tbody></table></div>` : ""}`;
+}
 function renderAcc() {
   const sm = B.summary || {};
   const days = Object.entries(sm.daily || {}).slice(-30);
@@ -731,6 +756,7 @@ function renderAcc() {
     ${groupPanel()}
     <div class="two" style="margin-top:14px"><div class="panel"><h3>Daily hit rate · best plays</h3>${chart}</div>
       <div class="panel"><h3>Calibration: does 60% mean 60%?</h3>${bins.length ? `<div class="tbl"><table><thead><tr><th class="l">Model said</th><th>Picks</th><th>Hit</th><th></th></tr></thead><tbody>${bins.map(([b,[n,h]])=>`<tr class="clk${G.key==="conf|"+b?" sel":""}" onclick="pickGroup('conf|${b}','Model said ${b}%','all')"><td class="l">${b}% <span class="note">›</span></td><td>${n}</td><td>${pct(h/n,1)}</td><td>${bar(h/n)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Fills in after games are graded.</div>`}</div></div>
+    ${gtSection()}
     <h2>Record <span class="cnt">tap a row for its picks · tap the "All leans" record for every lean</span></h2>
     <div class="tbl"><table><thead><tr><th class="l">Group</th><th>Best plays</th><th>Hit %</th><th></th><th>Kalshi ROI</th><th>All leans</th><th>Hit %</th></tr></thead><tbody>
       ${aggRows("", ["all","NFL","NBA","Pick6","Kalshi","NFL|Pick6","NFL|Kalshi","NBA|Pick6","NBA|Kalshi"], k => k === "all" ? "Everything" : k.replace("|"," · "))}
@@ -766,12 +792,13 @@ function renderHow() {
     <p class="note" style="margin-top:10px"><b>Matchup grade (A–F)</b> rolls every adjustment for that stat into one letter: A means the setup lifts him 7%+, F means it costs him 7%+. <b>Streak</b> counts straight games over or under the line. <b>Line movement</b> shows how far a Pick6 line or Kalshi price has moved since this board first saw it, and whether it moved toward our side.</p>
     <p class="note"><b>Game sureness (A–D)</b> grades how much to trust each projected winner and final score, out of 100: how big the favorite is (45), whether the model agrees with the Vegas spread (25) and total (15), and how many games both teams have played (15), minus points for bad weather, back-to-backs and long injury lists. A = Strong (70+, and Vegas must back it up), B = Solid, C = Shaky, D = Toss-up. It's a guide to how sure the model is, not a track record yet.</p>
     <p class="note"><b>Team winners pick grade (A–D)</b> starts from the game sureness score and adds or takes away up to 15 points for the Kalshi price: if Kalshi charges less for the projected winner than the model thinks it's worth, the grade goes up. A = Best look, B = Good look, C = Meh, D = Pass. The top three A's get a ★ Top pick tag.</p>
+    <p class="note"><b>Game-winner tracker:</b> every game's projected winner, score, win chance and grades are saved right before tip-off or kickoff and graded after the final. The Accuracy tab compares how often each grade wins with what the model expected, and lists tuning hints once a group has 10+ finals.</p>
     <p class="note"><b>My Bets</b> reads your open Kalshi bets with your own API key, kept in GitHub Secrets and never shown on the page. For each one it multiplies the model's chance for every leg into a value, and says <b>Cash out</b> when Kalshi's bid is above that value.</p>
     <h3 style="margin-top:14px">Self-checking</h3>
     <p class="note">Every pick and projected stat is saved before the game and graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
     <h3 style="margin-top:14px">Version history</h3>
     <p class="note">Small batches of features add 0.1; a big overhaul moves to the next whole number (2.0).</p>
-    ${[["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
+    ${[["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
     <h3 style="margin-top:14px">Limits</h3>
     <p class="note">Free data doesn't say who guards whom, so "vs the defender" means what the defense allows to that position. NFL snap counts aren't public in this data, so workload uses targets and carries. Injury news can break after the last refresh.</p></div></div>`;
 }
@@ -804,7 +831,7 @@ let qt; $("#q").addEventListener("input", e => { clearTimeout(qt); qt = setTimeo
   if (B.version) $("#ver").textContent = "V" + B.version;
   render();
   try { P = await (await fetch("data/players.json?t=" + Date.now())).json(); } catch (e) { P = {}; }
-  await loadBets(); if (S.tab === "bets") render();
+  await loadBets(); if (S.tab === "bets" || S.tab === "acc") render();
 })();
 // Auto-refresh: check for new data every 5 minutes, and whenever the tab comes back into view,
 // so a tab left open never shows stale games, records or grades.
