@@ -259,6 +259,10 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 .tk .tb{padding:16px 20px 20px;display:grid;gap:12px}
 .tk .sidepill{display:inline-block;padding:3px 10px;border-radius:99px;font:800 13px var(--display);letter-spacing:.06em}
 .tk .sidepill.yes{background:var(--morebg);color:var(--more)}.tk .sidepill.no{background:var(--lessbg);color:var(--less)}
+.tk .sideseg{display:inline-flex;border:1px solid var(--line);border-radius:99px;padding:2px;gap:2px}.tk .sideseg button{border:0;background:none;color:var(--muted);font:800 12.5px var(--display);letter-spacing:.06em;padding:4px 12px;border-radius:99px;cursor:pointer}.tk .sideseg button:disabled{cursor:default}
+.tk .sideseg button.on.yes{background:var(--morebg);color:var(--more)}.tk .sideseg button.on.no{background:var(--lessbg);color:var(--less)}
+.cleg .legside{font:800 11px var(--display);letter-spacing:.05em;border:1px solid var(--line);border-radius:99px;padding:3px 8px;white-space:nowrap;background:none}.cleg .legside.yes{color:var(--more)}.cleg .legside.no{color:var(--less)}
+.kbtn.alt{margin-left:6px}
 .tk .row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px}.tk .row span{color:var(--muted)}
 .tk .big{font:800 30px/1 var(--display)}
 .tk .stp{display:flex;align-items:center;gap:6px}.tk .stp button{width:34px;height:34px;border-radius:10px;background:var(--panel2);border:1px solid var(--line2);font-size:18px}
@@ -320,7 +324,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 <body>
 <header>
   <div class="wrap hrow">
-    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V3.7</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
+    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V3.8</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
     <div class="seg" id="sportSeg"><button data-s="NFL">NFL</button><button data-s="NBA">NBA</button></div>
     <div class="grow"></div>
     <input class="search" id="q" placeholder="Search player or team" aria-label="Search player or team">
@@ -463,10 +467,13 @@ function pickCard(p) {
 // ---------------- V3.0 visuals ----------------
 // Opens the exact market on Kalshi with the side picked; the bet is placed and confirmed inside Kalshi.
 const kbuy = (url, side) => !url ? "" : url + (url.includes("?") ? "&" : "?") + "orderSide=" + String(side || "yes").toLowerCase();
+// Bet the model's side, or the other side if you disagree
+const otherSide = sd => String(sd || "YES").toUpperCase() === "NO" ? "YES" : "NO";
+const flipText = t => / over /.test(t) ? t.replace(" over ", " under ") : / under /.test(t) ? t.replace(" under ", " over ") : /^NOT /.test(t) ? t.slice(4) : "NOT " + t;
 const betBtn = (p, cls = "") => p.platform === "Kalshi"
   ? (tradeOn() && p.ticker
-      ? `<button class="kbtn ${cls}" onclick="event.stopPropagation();openTicketPick('${esc(p.id)}')" title="Opens an order ticket; nothing is bought until you confirm">⚡ Buy ${p.side}</button>`
-      : `<a class="kbtn ${cls}" href="${esc(kbuy(p.url, p.side))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Opens this market on Kalshi with ${p.side} selected">Bet ${p.side} on Kalshi →</a>`)
+      ? `<button class="kbtn ${cls}" onclick="event.stopPropagation();openTicketPick('${esc(p.id)}')" title="Opens an order ticket; nothing is bought until you confirm">⚡ Buy ${p.side}</button><button class="kbtn ghost sm alt" onclick="event.stopPropagation();openTicketPick('${esc(p.id)}',true)" title="Disagree with the model? Bet the other side">or ${otherSide(p.side)}</button>`
+      : `<a class="kbtn ${cls}" href="${esc(kbuy(p.url, p.side))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Opens this market on Kalshi with ${p.side} selected">Bet ${p.side} on Kalshi →</a><a class="kbtn ghost sm alt" href="${esc(kbuy(p.url, otherSide(p.side)))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Disagree with the model? Bet the other side">or ${otherSide(p.side)}</a>`)
   : `<a class="kbtn p6 ${cls}" href="${esc(p.url || "https://pick6.draftkings.com/")}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open Pick6 →</a>`;
 function marketCheck(p) {
   const pts = [];
@@ -699,7 +706,7 @@ function teamWinners(q) {
         ${row(g, "away")}${row(g, "home")}
         <div class="wpb"><div style="width:${(1 - g.proj.pHome) * 100}%;background:${tc(g.away.abbr)}"></div><div style="flex:1;background:${tc(g.home.abbr)}"></div></div>
         <div class="ft"><span>${esc(when(g.start))}${g.spreadTxt ? " · Vegas " + esc(g.spreadTxt) : ""}</span>${wp ? `<span style="white-space:nowrap">${wp.price != null ? `Kalshi ${Math.round(wp.price * 100)}¢ <b class="${wp.edge >= 0 ? "up" : "dn"}">${wp.edge >= 0 ? "+" : ""}${Math.round(wp.edge * 100)}¢</b>` : "no Kalshi price"}</span>` : ""}</div>
-        ${wp && wp.mk && wp.mk.url ? `<div class="betrow">${comboWinBtn(g, wp)}${tradeOn() ? `<button class="kbtn sm" onclick="event.stopPropagation();openWinnerTicket('${g.id}')">⚡ Buy ${esc(wp.team.short)}</button>` : `<a class="kbtn sm" href="${esc(kbuy(wp.mk.url, "yes"))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Bet ${esc(wp.team.short)} on Kalshi →</a>`}</div>` : ""}</div>`; }).join("")}</div>`;
+        ${wp && wp.mk && wp.mk.url ? `<div class="betrow">${comboWinBtn(g, wp)}${tradeOn() ? `<button class="kbtn sm" onclick="event.stopPropagation();openWinnerTicket('${g.id}')">⚡ Buy ${esc(wp.team.short)}</button><button class="kbtn ghost sm alt" onclick="event.stopPropagation();openWinnerTicket('${g.id}',true)" title="Bet NO on ${esc(wp.team.short)} winning">or against</button>` : `<a class="kbtn sm" href="${esc(kbuy(wp.mk.url, "yes"))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Bet ${esc(wp.team.short)} on Kalshi →</a><a class="kbtn ghost sm alt" href="${esc(kbuy(wp.mk.url, "no"))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Bet NO on ${esc(wp.team.short)} winning">or against</a>`}</div>` : ""}</div>`; }).join("")}</div>`;
 }
 function renderPlayers() {
   const s = sp(), q = S.q.toLowerCase();
@@ -817,15 +824,27 @@ function disconnectTrade() { TR.url = ""; TR.pw = ""; TR.remember = false; TR.st
 
 let TK = null;
 function findPick(id) { for (const s of Object.values(B.sports)) { const p = [...s.picks, ...s.gamePicks].find(x => x.id === id); if (p) return p; } return null; }
-function openTicketPick(id) {
+function openTicketPick(id, flip) {
   const p = findPick(id); if (!p) return;
-  openTicket({ticker: p.ticker, side: (p.side || "YES").toLowerCase(), title: p.player ? `${p.player} · ${p.stat} ${p.side === "NO" ? "under" : "over"} ${fmt(p.line)}` : (p.label || p.title),
-               sub: p.title, prob: p.prob, tier: p.tier, url: p.url});
+  const t = {ticker: p.ticker, side: (p.side || "YES").toLowerCase(), title: p.player ? `${p.player} · ${p.stat} ${p.side === "NO" ? "under" : "over"} ${fmt(p.line)}` : (p.label || p.title),
+             sub: p.title, prob: p.prob, tier: p.tier, url: p.url, modelSide: (p.side || "YES").toLowerCase()};
+  if (flip) Object.assign(t, flipTicket(t));
+  openTicket(t);
 }
-function openWinnerTicket(gid) {
+// the same market from the other side: NO pays if the YES doesn't happen
+function flipTicket(t) {
+  return {side: t.side === "yes" ? "no" : "yes", prob: t.prob == null ? null : 1 - t.prob, title: flipText(t.title), tier: null};
+}
+function tkFlip() {
+  Object.assign(TK, flipTicket(TK), {ask: null, bid: null, price: null, done: null, msg: null});
+  drawTicket(); refreshQuote();
+}
+function openWinnerTicket(gid, flip) {
   const g = gameOf(gid), wp = g && winnerPick(g); if (!wp || !wp.mk) return;
   const pYes = (wp.mk.side || "YES") === "YES" ? wp.mk.prob : 1 - wp.mk.prob;
-  openTicket({ticker: wp.mk.ticker, side: "yes", title: `${wp.team.short} to win`, sub: g.name, prob: pYes, url: wp.mk.url});
+  const t = {ticker: wp.mk.ticker, side: "yes", title: `${wp.team.short} to win`, sub: g.name, prob: pYes, url: wp.mk.url, modelSide: "yes"};
+  if (flip) Object.assign(t, flipTicket(t));
+  openTicket(t);
 }
 async function openTicket(o) {
   if (!tradeOn()) { window.open(kbuy(o.url, o.side), "_blank", "noopener"); return; }
@@ -853,8 +872,9 @@ function drawTicket() {
   const over = cost != null && cost > lim.maxOrder;
   const can = !t.busy && !t.done && t.ask != null && pc >= 1 && pc <= 99 && t.count >= 1 && !over;
   $("#tbox").innerHTML = `<div class="th"><small>${esc(t.sub || "")}</small><b>${esc(t.title)}</b>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><span class="sidepill ${t.side}">BUY ${t.side.toUpperCase()}</span>${t.tier ? `<span class="tier ${t.tier}">${t.tier}</span>` : ""}<button class="x" onclick="closeTicket()" aria-label="Close" style="margin-left:auto;position:static">✕</button></div></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><span class="sideseg" role="group" aria-label="Side">${["yes", "no"].map(sd => `<button class="${t.side === sd ? "on " + sd : ""}" ${t.side === sd || t.busy || t.done ? "disabled" : ""} onclick="tkFlip()">BUY ${sd.toUpperCase()}</button>`).join("")}</span>${t.tier ? `<span class="tier ${t.tier}">${t.tier}</span>` : ""}<button class="x" onclick="closeTicket()" aria-label="Close" style="margin-left:auto;position:static">✕</button></div></div>
     <div class="tb">
+      ${t.modelSide && t.side !== t.modelSide ? `<div class="msg info">You're betting against the model's pick. It gives this side ${pct(t.prob)}.</div>` : ""}
       <div class="row"><span>Live ${t.side.toUpperCase()} price</span><b class="big">${t.ask != null ? Math.round(t.ask * 100) + "¢" : "—"}</b></div>
       ${t.prob != null ? `<div class="row"><span>Model chance</span><b>${pct(t.prob)} ${edge != null ? `<span class="${edge >= 0 ? "up" : "dn"}">(${edge >= 0 ? "+" : ""}${Math.round(edge * 100)}¢ edge at your price)</span>` : ""}</b></div>` : ""}
       <div class="row"><span>Contracts</span><span class="stp"><button onclick="tkSet('count',Math.max(1,TK.count-1))" aria-label="Fewer">−</button><input type="number" min="1" step="1" value="${t.count}" onchange="tkSet('count',Math.max(1,Math.floor(+this.value||1)))" aria-label="Contracts"><button onclick="tkSet('count',TK.count+1)" aria-label="More">+</button></span></div>
@@ -978,6 +998,11 @@ function toggleLegWinner(gid) {
   const pYes = (wp.mk.side || "YES") === "YES" ? wp.mk.prob : 1 - wp.mk.prob;
   toggleLeg({ticker: wp.mk.ticker, side: "yes", label: `${wp.team.short} to win`, prob: pYes, gameId: gid, sport: g.sport, start: g.start});
 }
+function flipLeg(i) {
+  const l = CS[i]; if (!l) return;
+  l.side = (l.side || "yes") === "yes" ? "no" : "yes"; l.prob = l.prob == null ? null : 1 - l.prob; l.label = flipText(l.label);
+  saveCombo(); CT.quote = null; const y = window.scrollY; render(); window.scrollTo({top: y}); drawComboTicket();
+}
 function comboStats(L = CS) {
   const fair = L.reduce((a, l) => a * (l.prob ?? 0.5), 1);
   const games = {}; L.forEach(l => games[l.gameId] = (games[l.gameId] || 0) + 1);
@@ -1007,7 +1032,7 @@ function drawComboTicket() {
   const colors = {}; let ci = 0; const pal = ["var(--brass)", "var(--ks)", "var(--books)", "var(--more)", "var(--p6)", "var(--less)"];
   Object.keys(st.games).forEach(g => { if (st.games[g] > 1) colors[g] = pal[ci++ % pal.length]; });
   const q = CT.quote, cost = q ? q.price * CT.count : null, edge = q ? st.fair - q.price : null;
-  const legs = L.map((l, i) => { const g = gameOf(l.gameId); return `<div class="cleg"><div class="nm">${colors[l.gameId] ? `<span class="sg" style="background:${colors[l.gameId]}" title="Same game as another leg"></span>` : ""}<b>${esc(l.label)}</b><small>${esc(g ? g.name : l.sport)} · ${esc(when(l.start))}</small></div><b>${pct(l.prob)}</b>${CT.bought ? "" : `<button onclick="CS.splice(${i},1);saveCombo();CT.quote=null;render();CS.length?drawComboTicket():closeTicket()" aria-label="Remove leg">✕</button>`}</div>`; }).join("");
+  const legs = L.map((l, i) => { const g = gameOf(l.gameId); return `<div class="cleg"><div class="nm">${colors[l.gameId] ? `<span class="sg" style="background:${colors[l.gameId]}" title="Same game as another leg"></span>` : ""}<b>${esc(l.label)}</b><small>${esc(g ? g.name : l.sport)} · ${esc(when(l.start))}</small></div>${CT.bought ? `<span class="tag">${(l.side || "yes").toUpperCase()}</span>` : `<button class="legside ${l.side || "yes"}" onclick="flipLeg(${i})" title="Switch this leg to the other side">${(l.side || "yes").toUpperCase()} ⇄</button>`}<b>${pct(l.prob)}</b>${CT.bought ? "" : `<button onclick="CS.splice(${i},1);saveCombo();CT.quote=null;render();CS.length?drawComboTicket():closeTicket()" aria-label="Remove leg">✕</button>`}</div>`; }).join("");
   const over = cost != null && cost > lim.maxOrder;
   $("#tbox").innerHTML = `<div class="th"><small>Kalshi combo · priced by market makers</small><b>${L.length}-leg combo</b>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><span class="sidepill yes">BUY YES</span><span class="tag">${pct(st.fair, 1)} model chance</span><button class="x" onclick="closeTicket()" aria-label="Close" style="margin-left:auto;position:static">✕</button></div></div>
@@ -1447,7 +1472,7 @@ function renderHow() {
     <p class="note">Every pick and projected stat is saved before the game. Kalshi picks are graded by Kalshi's settlement and cross-checked with the ESPN box score; if the two disagree the pick is flagged and left out of the record. Pick6 picks and projected stats are graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
     <h3 style="margin-top:14px">Version history</h3>
     <p class="note">Every update bumps the version: small batches of features add 0.1; a big overhaul moves to the next whole number.</p>
-    ${[["V3.7","Mix player props and team winners in one combo: every Games card now lists that game's Kalshi player props (most likely first, show all, filter by player or stat) with + Combo next to the team winner · + Combo also on spreads and totals, on the game strip above Top Picks, and on every Kalshi line in a player's Lines table"],["V3.6","NFL shows only this week's games; next week's slate appears once Monday night kicks off, so no team looks like it plays twice"],["V3.5","Live numbers on My Bets: every leg shows the player's live stat against your line with a progress bar and how much is left to go, team legs show the score and who's ahead, and each game shows the quarter and time left in it · Refreshes every 30 seconds while a game is on, straight from ESPN, without waiting for the board update · Legs flip to Hit or Missed as soon as they're decided, and the legs-hit count updates live"],["V3.4","Reliable refresh: each update now queues the next one about 30 minutes later, so the board no longer goes hours without updating when GitHub skips its scheduled runs"],["V3.3","Odds Board at the top of Top Picks: NFL and NBA side by side, each with a players dropdown and a teams-to-win dropdown, switchable between most likely and biggest payout; pick one to jump to that player or game · New sorts: 'biggest payout' on Top Picks, 'highest win odds' and 'biggest payout' on team winners"],["V3.2","Combos: tap + Combo on any Kalshi pick or team winner to build a combo slip with the model's combined chance and same-game warnings, then get a live market-maker price and buy it from the slip · The worker learns how Kalshi prices combo quotes from your own past combo fills and won't buy a combo until it can confirm that · Single orders switch to Kalshi's newer order endpoint automatically if the old one is retired"],["V3.1","⚡ One-click Kalshi orders: connect your own Cloudflare Worker on the My Bets tab, then every Kalshi pick, team winner and line gets a Buy button that opens an order ticket (live price, contracts, max price, cost and payout) and places the order only when you confirm · Worker caps order size and rejects the order if the price moved"],["V3.0","More data behind every projection: nflverse snap share, target and air-yards share, red-zone looks and expected TDs, Next Gen Stats, the official NFL injury report with practice status, ESPN depth charts and the official NBA injury report · Sportsbook consensus lines from The Odds API (optional key) · Bet buttons on every pick, team winner and line that open the exact Kalshi market with your side picked · Market Check bar on every pick: model vs Kalshi vs books · Far-from-market flag drops the tier a step · Kalshi picks graded by Kalshi's settlement with an ESPN cross-check; disagreements flagged, not counted · Data-sources strip, usage meters and a grading donut"],["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
+    ${[["V3.8","Bet either side: every Kalshi pick has an ‘or YES/NO’ button next to the model’s side, team winners have ‘or against’, and the order ticket has a YES/NO switch that reprices live and notes when you’re going against the model · Combo legs flip to the other side right in the slip, and the combined chance updates"],["V3.7","Mix player props and team winners in one combo: every Games card now lists that game's Kalshi player props (most likely first, show all, filter by player or stat) with + Combo next to the team winner · + Combo also on spreads and totals, on the game strip above Top Picks, and on every Kalshi line in a player's Lines table"],["V3.6","NFL shows only this week's games; next week's slate appears once Monday night kicks off, so no team looks like it plays twice"],["V3.5","Live numbers on My Bets: every leg shows the player's live stat against your line with a progress bar and how much is left to go, team legs show the score and who's ahead, and each game shows the quarter and time left in it · Refreshes every 30 seconds while a game is on, straight from ESPN, without waiting for the board update · Legs flip to Hit or Missed as soon as they're decided, and the legs-hit count updates live"],["V3.4","Reliable refresh: each update now queues the next one about 30 minutes later, so the board no longer goes hours without updating when GitHub skips its scheduled runs"],["V3.3","Odds Board at the top of Top Picks: NFL and NBA side by side, each with a players dropdown and a teams-to-win dropdown, switchable between most likely and biggest payout; pick one to jump to that player or game · New sorts: 'biggest payout' on Top Picks, 'highest win odds' and 'biggest payout' on team winners"],["V3.2","Combos: tap + Combo on any Kalshi pick or team winner to build a combo slip with the model's combined chance and same-game warnings, then get a live market-maker price and buy it from the slip · The worker learns how Kalshi prices combo quotes from your own past combo fills and won't buy a combo until it can confirm that · Single orders switch to Kalshi's newer order endpoint automatically if the old one is retired"],["V3.1","⚡ One-click Kalshi orders: connect your own Cloudflare Worker on the My Bets tab, then every Kalshi pick, team winner and line gets a Buy button that opens an order ticket (live price, contracts, max price, cost and payout) and places the order only when you confirm · Worker caps order size and rejects the order if the price moved"],["V3.0","More data behind every projection: nflverse snap share, target and air-yards share, red-zone looks and expected TDs, Next Gen Stats, the official NFL injury report with practice status, ESPN depth charts and the official NBA injury report · Sportsbook consensus lines from The Odds API (optional key) · Bet buttons on every pick, team winner and line that open the exact Kalshi market with your side picked · Market Check bar on every pick: model vs Kalshi vs books · Far-from-market flag drops the tier a step · Kalshi picks graded by Kalshi's settlement with an ESPN cross-check; disagreements flagged, not counted · Data-sources strip, usage meters and a grading donut"],["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
     <h3 style="margin-top:14px">Limits</h3>
     <p class="note">Free data doesn't say who guards whom, so "vs the defender" means what the defense allows to that position. nflverse stats update about once a day, so a game from last night may not be in the usage numbers yet. The Odds API free plan has 500 credits a month, so sportsbook lines refresh a few times a day for the soonest games. Injury news can break after the last refresh.</p></div></div>`;
 }
