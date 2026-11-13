@@ -11,7 +11,7 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "3.6"
+VERSION = "3.7"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
