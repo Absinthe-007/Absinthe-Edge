@@ -407,9 +407,11 @@ def espn_games(sport, now):
     if sport == "NFL":
         sb = get(f"{ESPN}/{path}/scoreboard") or {}
         evs = sb.get("events", [])
-        # include next week too, so the board is full right after Monday night
+        # next week's games show up only once every game this week has kicked off (after Monday night),
+        # so a team never looks like it's playing twice
         wk = (sb.get("week") or {}).get("number")
-        if wk and (sb.get("season") or {}).get("type", 2) == 2 and wk < 18:
+        this_week_left = any(((x.get("status") or {}).get("type") or {}).get("state") == "pre" for x in evs)
+        if wk and not this_week_left and (sb.get("season") or {}).get("type", 2) == 2 and wk < 18:
             evs += (get(f"{ESPN}/{path}/scoreboard", params={"week": wk + 1, "seasontype": 2}) or {}).get("events", [])
     else:
         et = now - timedelta(hours=5)
