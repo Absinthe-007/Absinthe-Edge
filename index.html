@@ -187,7 +187,11 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 .bmon span{display:block;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}.bmon b{font:800 19px var(--display)}
 .legs{display:grid;gap:6px;margin-top:10px}.leg{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px;padding:6px 8px;border-radius:8px;background:var(--ink2)}
 .leg .lg{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.leg small{color:var(--dim);margin-left:6px}
-@media (max-width:760px){.bmon{grid-template-columns:repeat(2,minmax(0,1fr))}.leg .mini,.leg .tag{display:none}.leg small{display:block;margin-left:0}}
+.lv{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px;white-space:normal;font-size:12px;color:var(--muted)}.lv .st{font-weight:700;color:var(--chalk);font-variant-numeric:tabular-nums}.lv .st.ok{color:var(--more)}.lv .st.bad{color:var(--less)}
+.lv .clk{display:inline-flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums}.lv .clk i{width:7px;height:7px;border-radius:50%;background:var(--less);animation:lvp 1.6s infinite}.lv .clk.done i{background:var(--dim);animation:none}
+.lv .prog{flex:0 0 90px;height:4px;background:var(--ink);border-radius:99px;overflow:hidden}.lv .prog b{display:block;height:4px;border-radius:99px}
+@keyframes lvp{50%{opacity:.3}}@media (prefers-reduced-motion:reduce){.lv .clk i{animation:none}}
+@media (max-width:760px){.bmon{grid-template-columns:repeat(2,minmax(0,1fr))}.leg .mini,.leg .tag{display:none}.leg small{display:block;margin-left:0}.lv .prog{flex-basis:60px}}
 .fx{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
 .fx:last-child{border:0}
 /* modal */
@@ -315,7 +319,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 <body>
 <header>
   <div class="wrap hrow">
-    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V3.4</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
+    <div class="brand"><div class="mk">A</div><div><b>ABSINTHE EDGE</b><span class="ver" id="ver">V3.5</span><small>Kalshi × Pick6 · NFL & NBA</small></div></div>
     <div class="seg" id="sportSeg"><button data-s="NFL">NFL</button><button data-s="NBA">NBA</button></div>
     <div class="grow"></div>
     <input class="search" id="q" placeholder="Search player or team" aria-label="Search player or team">
@@ -1081,6 +1085,7 @@ const usd = x => x == null || isNaN(x) ? "—" : "$" + (+x).toFixed(2);
 const cents = x => x == null || isNaN(x) ? "—" : (x * 100 < 10 ? (x * 100).toFixed(1) : Math.round(x * 100)) + "¢";
 function renderBets() {
   const el = $("#v-bets");
+  if (MB && Date.now() - LIVE.at > 25000) setTimeout(pollLive, 0);
   if (!MB) { el.innerHTML = tradePanel() + `<h2>My Bets</h2><div class="panel"><h3>Connect your Kalshi account</h3><p class="note">Add two secrets to this repo on GitHub (Settings → Secrets and variables → Actions → New repository secret):</p>
     <div class="fx"><span><b>KALSHI_API_KEY_ID</b></span><span>the key ID from kalshi.com → Account → API keys</span></div><div class="fx"><span><b>KALSHI_PRIVATE_KEY</b></span><span>the whole private key file Kalshi gave you</span></div>
     <p class="note" style="margin-top:10px">Your bets show up here after the next update.</p></div>`; return; }
@@ -1089,20 +1094,169 @@ function renderBets() {
   const cost = bets.reduce((a, b) => a + (b.cost || 0), 0), cashN = bets.filter(b => b.signal === "Cash out").length;
   const tile = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
   el.innerHTML = tradePanel() + `<div class="kpis">${tile("Open bets", open.length, cashN ? `<span style="color:var(--brass)">${cashN} to cash out</span>` : "none to cash out")}${tile("Total in", usd(cost), "what you paid")}${tile("Sell now", usd(sum("sellValue")), "Kalshi's current bid")}${tile("Model value", usd(sum("fairValue")), "chance of winning × payout")}${tile("If all win", usd(sum("payout")), "total payout")}${tile("Cash", usd(MB.cash), "portfolio " + usd(MB.portfolio))}</div>
-  <h2>My Bets <span class="cnt">${bets.length} open on Kalshi · updated ${esc(new Date(MB.updated).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}))}</span></h2>
+  <h2>My Bets <span class="cnt">${bets.length} open on Kalshi · updated ${esc(new Date(MB.updated).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}))}<span id="lvstamp">${liveStamp()}</span></span></h2>
   ${MB.error ? `<div class="empty" style="margin-bottom:14px">Couldn't reach Kalshi on the last update: ${esc(MB.error)}</div>` : ""}
-  ${bets.length ? bets.map(betCard).join("") : `<div class="empty">No open Kalshi bets right now.</div>`}
-  <p class="note"><b>Cash out</b> means Kalshi will pay more for the bet right now than the model thinks it's worth (its chance of winning × the payout). <b>Hold</b> means the model values it above the sell price, or nobody is bidding on it yet. Legs come from the model before tip-off or kickoff and from the live Kalshi price once a game starts. Legs from the same game tend to hit or miss together, so the model value for those is rougher. Model estimates only, not financial advice.</p>`;
+  ${bets.length ? bets.map((b, i) => betCard(b, i)).join("") : `<div class="empty">No open Kalshi bets right now.</div>`}
+  <p class="note"><b>Cash out</b> means Kalshi will pay more for the bet right now than the model thinks it's worth (its chance of winning × the payout). <b>Hold</b> means the model values it above the sell price, or nobody is bidding on it yet. Legs come from the model before tip-off or kickoff and from the live Kalshi price once a game starts. Live stats, scores and the game clock come from ESPN and refresh every 30 seconds while a game is on; a count stat (catches, points, rebounds, TDs) locks in as a hit the moment it reaches the line, yardage waits for the final since it can go back down. Legs from the same game tend to hit or miss together, so the model value for those is rougher. Model estimates only, not financial advice.</p>`;
 }
 const legName = t => String(t || "").replace(/^yes\s+/i, "").replace(/^no\s+(.*)$/i, "NOT $1");
-function betCard(b) {
+
+// ---------------- live game numbers on My Bets (ESPN box scores, read straight from the browser) ----------------
+const ESPN_API = "https://site.api.espn.com/apis/site/v2/sports/";
+const ESPN_PATH = {NBA: "basketball/nba", NFL: "football/nfl"};
+const K2E = {NBA: {GSW:"GS", SAS:"SA", NOP:"NO", NYK:"NY", WAS:"WSH", UTA:"UTAH", PHO:"PHX"}, NFL: {WAS:"WSH", JAC:"JAX", LA:"LAR"}};
+// Kalshi series -> [stat from the box score, unit, counts only go up?]
+const LSTAT = {
+  NBA: {PTS:["pts","pts",1], REB:["reb","reb",1], AST:["ast","ast",1], "3PT":["3pm","threes",1], STL:["stl","stl",1], BLK:["blk","blk",1], TO:["to","TO",1],
+        PRA:[["pts","reb","ast"],"pts+reb+ast",1], PR:[["pts","reb"],"pts+reb",1], PA:[["pts","ast"],"pts+ast",1], RA:[["reb","ast"],"reb+ast",1], SB:[["stl","blk"],"stl+blk",1]},
+  NFL: {PASSYDS:["passYds","pass yds",0], PASSCOMP:["comp","completions",1], PASSATT:["att","attempts",1], PASSTDS:["passTD","pass TD",1], PASSTD:["passTD","pass TD",1], INT:["int","INT",1],
+        RSHYDS:["rushYds","rush yds",0], RUSHYDS:["rushYds","rush yds",0], RSHATT:["rushAtt","carries",1], RECYDS:["recYds","rec yds",0], REC:["rec","catches",1], RECS:["rec","catches",1],
+        RRYDS:[["rushYds","recYds"],"rush+rec yds",0], TD:[["rushTD","recTD"],"TD",1], ANYTD:[["rushTD","recTD"],"TD",1], RSHTDS:["rushTD","rush TD",1], RECTDS:["recTD","rec TD",1]}
+};
+let LIVE = {boards: {}, sums: {}, at: 0, timer: null, busy: false};
+function legInfo(tk) {
+  const pt = String(tk || "").split("-"), m = /^KX(NBA|NFL)(.+)$/.exec(pt[0] || "");
+  if (!m || pt.length < 3) return null;
+  const sport = m[1], series = m[2], mid = pt[1];
+  const d = /^(\d\d)([A-Z]{3})(\d\d)(.*)$/.exec(mid); if (!d) return null;
+  const mo = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC".indexOf(d[2]) / 3 + 1; if (mo < 1) return null;
+  const date = "20" + d[1] + String(mo).padStart(2, "0") + d[3];
+  const out = {sport, series, date, teams: d[4], team: series === "GAME" ? pt[2] : null};
+  if (series !== "GAME" && pt.length >= 4) { const n = parseFloat(pt[pt.length - 1]); out.player = pt.slice(2, -1).join("-"); out.line = isNaN(n) ? null : n; out.stat = LSTAT[sport][series] || null; }
+  return out;
+}
+const eAbbr = (sport, k) => (K2E[sport] || {})[k] || k;
+async function liveBoard(sport, date) {
+  const key = sport + date, c = LIVE.boards[key];
+  if (c && c.allDone) return c;
+  const r = await fetch(ESPN_API + ESPN_PATH[sport] + "/scoreboard?dates=" + date, {cache: "no-store"});
+  const j = await r.json(), evs = (j.events || []).map(e => { const c0 = e.competitions[0], st = c0.status || e.status, ty = st.type || {};
+    const tm = c0.competitors.map(x => ({abbr: x.team.abbreviation, side: x.homeAway, score: +x.score || 0, name: x.team.shortDisplayName}));
+    return {id: e.id, start: e.date, state: ty.state, name: ty.name, clock: st.displayClock, period: st.period, detail: ty.shortDetail, teams: tm}; });
+  return LIVE.boards[key] = {evs, allDone: evs.length > 0 && evs.every(e => e.state === "post")};
+}
+function findEv(info) {
+  const b = LIVE.boards[info.sport + info.date]; if (!b) return null;
+  return b.evs.find(e => { const a = e.teams.map(t => t.abbr); return [a[0] + a[1], a[1] + a[0]].some(x => x === info.teams) ||
+    e.teams.every(t => info.teams.includes(t.abbr) || Object.entries(K2E[info.sport]).some(([k, v]) => v === t.abbr && info.teams.includes(k))); }) || null;
+}
+async function liveSummary(sport, ev) {
+  const c = LIVE.sums[ev.id]; if (c && c.final) return c;
+  const j = await (await fetch(ESPN_API + ESPN_PATH[sport] + "/summary?event=" + ev.id, {cache: "no-store"})).json();
+  const ppl = [];
+  for (const t of (j.boxscore || {}).players || []) for (const cat of t.statistics || []) {
+    const keys = cat.keys || [];
+    for (const a of cat.athletes || []) {
+      const id = a.athlete.id; let p = ppl.find(x => x.id === id);
+      if (!p) ppl.push(p = {id, name: a.athlete.displayName || "", jersey: String(a.athlete.jersey || ""), team: t.team.abbreviation, s: {}});
+      const v = k => { const i = keys.indexOf(k); return i < 0 ? null : a.stats[i]; }, n = x => { const f = parseFloat(x); return isNaN(f) ? 0 : f; };
+      if (sport === "NBA") { const tp = String(v("threePointFieldGoalsMade-threePointFieldGoalsAttempted") || "0-0").split("-");
+        Object.assign(p.s, {pts: n(v("points")), reb: n(v("rebounds")), ast: n(v("assists")), stl: n(v("steals")), blk: n(v("blocks")), to: n(v("turnovers")), "3pm": n(tp[0])}); }
+      else if (cat.name === "passing") { const ca = String(v("completions/passingAttempts") || "0/0").split("/");
+        Object.assign(p.s, {comp: n(ca[0]), att: n(ca[1]), passYds: n(v("passingYards")), passTD: n(v("passingTouchdowns")), int: n(v("interceptions"))}); }
+      else if (cat.name === "rushing") Object.assign(p.s, {rushAtt: n(v("rushingAttempts")), rushYds: n(v("rushingYards")), rushTD: n(v("rushingTouchdowns"))});
+      else if (cat.name === "receiving") Object.assign(p.s, {rec: n(v("receptions")), recYds: n(v("receivingYards")), recTD: n(v("receivingTouchdowns"))});
+    }
+  }
+  return LIVE.sums[ev.id] = {ppl, final: ev.state === "post"};
+}
+const plain = x => String(x || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z]/g, "");
+function findPlayer(sum, code, label) {
+  if (!sum) return null;
+  const m = /^(.*?)(\d+)$/.exec(code || ""), letters = m ? m[1] : plain(code), jer = m ? m[2] : null;
+  const last = p => plain(p.name.replace(/\s+(Jr\.?|Sr\.?|II|III|IV|V)$/i, "").split(" ").slice(1).join(""));
+  return sum.ppl.find(p => jer && p.jersey === jer && letters.endsWith(last(p))) ||
+    sum.ppl.find(p => letters.endsWith(last(p)) && letters.includes(plain(p.name)[0] + last(p))) ||
+    sum.ppl.find(p => plain(p.name) === plain(String(label || "").replace(/^NOT\s+/i, "").split(":")[0])) || null;
+}
+function clockText(ev, sport) {
+  if (!ev) return "";
+  if (ev.state === "pre") return (sport === "NFL" ? "kicks off " : "tips off ") + when(ev.start);
+  const per = p => p <= 4 ? "Q" + p : (p === 5 ? "OT" : (p - 4) + "OT");
+  if (ev.state === "post") return ev.period > 4 ? "Final/" + per(ev.period) : "Final";
+  if (/HALFTIME/.test(ev.name || "")) return "Halftime";
+  if (/END_PERIOD/.test(ev.name || "")) return "End of " + per(ev.period);
+  return per(ev.period) + " · " + (ev.clock || "") + " left";
+}
+function scoreText(ev) {
+  if (!ev || ev.state === "pre") return "";
+  const a = ev.teams.find(t => t.side === "away") || ev.teams[0], h = ev.teams.find(t => t.side === "home") || ev.teams[1];
+  return `${a.abbr} ${a.score} – ${h.score} ${h.abbr}`;
+}
+// What the live numbers say about one leg: the line under the label, plus hit/miss once it's locked in.
+function liveLeg(l) {
+  const info = legInfo(l.ticker); if (!info) return null;
+  const ev = findEv(info); if (!ev) return null;
+  const no = (l.side || "yes") === "no", out = {ev, sport: info.sport, clock: clockText(ev, info.sport), score: scoreText(ev), state: null, html: ""};
+  if (info.series === "GAME" && info.team) {
+    const mine = eAbbr(info.sport, info.team), me = ev.teams.find(t => t.abbr === mine), op = ev.teams.find(t => t.abbr !== mine);
+    if (me && op && ev.state !== "pre") {
+      const d = me.score - op.score, good = no ? d < 0 : d > 0;
+      out.stat = {txt: d === 0 ? "tied" : `${me.abbr} ${d > 0 ? "up" : "down"} ${Math.abs(d)}`, cls: d === 0 ? "" : good ? "ok" : "bad"};
+      if (ev.state === "post") out.state = good ? "won" : "lost";
+    }
+  } else if (info.stat && info.line != null) {
+    const sum = LIVE.sums[ev.id], p = ev.state === "pre" ? null : findPlayer(sum, info.player, l.label);
+    if (ev.state !== "pre" && sum) {
+      const keys = [].concat(info.stat[0]), val = p ? keys.reduce((a, k) => a + (p.s[k] || 0), 0) : 0, need = info.line, reached = val >= need;
+      const good = no ? !reached : reached;
+      out.stat = {txt: `${fmt(val, 0)} / ${need} ${info.stat[1]}`, cls: reached ? (no ? "bad" : "ok") : ""};
+      out.prog = Math.max(0, Math.min(1, val / need)); out.progGood = !no;
+      if (reached && info.stat[2]) out.state = no ? "lost" : "won";   // counts can't go back down, so it's locked in
+      else if (ev.state === "post") out.state = good ? "won" : "lost";
+      if (!out.state && !reached) out.togo = no ? `${fmt(need - val, 0)} of room` : `${fmt(need - val, 0)} to go`;
+    }
+  }
+  return out;
+}
+function liveLine(lv) {
+  if (!lv) return "";
+  const done = lv.ev.state === "post";
+  return `<span class="lv">${lv.stat ? `<span class="st ${lv.stat.cls}">${esc(lv.stat.txt)}</span>` : ""}${lv.prog != null && !lv.state ? `<span class="prog"><b style="width:${(lv.prog * 100).toFixed(0)}%;background:${lv.progGood ? "var(--more)" : "var(--less)"}"></b></span>` : ""}${lv.togo ? `<span>${esc(lv.togo)}</span>` : ""}${lv.score ? `<span>${esc(lv.score)}</span>` : ""}${lv.clock ? `<span class="clk ${done || lv.ev.state === "pre" ? "done" : ""}">${lv.ev.state === "in" ? "<i></i>" : ""}${esc(lv.clock)}</span>` : ""}</span>`;
+}
+async function pollLive() {
+  if (!MB || LIVE.busy) return;
+  LIVE.busy = true;
+  try {
+    const infos = (MB.bets || []).flatMap(b => b.legs).map(l => legInfo(l.ticker)).filter(Boolean);
+    const days = [...new Set(infos.map(i => i.sport + "|" + i.date))];
+    await Promise.all(days.map(k => { const [sp, d] = k.split("|"); return liveBoard(sp, d).catch(() => null); }));
+    const evs = new Map();
+    for (const i of infos) { if (!i.player) continue; const e = findEv(i); if (e && e.state !== "pre") evs.set(e.id, [i.sport, e]); }
+    await Promise.all([...evs.values()].map(([sp, e]) => liveSummary(sp, e).catch(() => null)));
+    LIVE.at = Date.now();
+    if (S.tab === "bets") paintLive();
+  } finally { LIVE.busy = false; schedLive(); }
+}
+function anyLive() { return Object.values(LIVE.boards).some(b => b.evs.some(e => e.state === "in")); }
+function schedLive() {
+  clearTimeout(LIVE.timer);
+  LIVE.timer = setTimeout(() => { if (!document.hidden && S.tab === "bets") pollLive(); else schedLive(); }, anyLive() ? 30000 : 180000);
+}
+// Swap in the new numbers without redrawing the page, so nothing you've typed above gets cleared.
+function paintLive() {
+  (MB.bets || []).forEach((b, i) => {
+    const box = document.querySelector(`.legs[data-b="${i}"]`); if (box) box.innerHTML = b.legs.map(betLeg).join("");
+    const hc = document.querySelector(`.hitc[data-b="${i}"]`); if (hc) hc.textContent = hitText(b);
+  });
+  const st = $("#lvstamp"); if (st) st.textContent = liveStamp();
+}
+const liveStamp = () => LIVE.at ? ` · live scores ${new Date(LIVE.at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"})}` : "";
+function legNow(l) { const lv = liveLeg(l); return {lv, state: l.state === "won" || l.state === "lost" ? l.state : (lv && lv.state) || l.state}; }
+function hitText(b) {
+  const n = b.legs.map(legNow), done = n.filter(x => x.state === "won").length, dead = n.some(x => x.state === "lost");
+  return `${done}/${b.legs.length} legs hit so far${dead ? " · a leg missed" : ""}`;
+}
+function betLeg(l) {
+  const {lv, state} = legNow(l), live = state !== "won" && state !== "lost" && lv && lv.ev.state === "in";
+  const ic = state === "won" ? `<b class="w">✓</b>` : state === "lost" ? `<b class="lz">✗</b>` : live || l.state === "live" ? `<b style="color:var(--warn)">●</b>` : `<span style="color:var(--dim)">○</span>`;
+  return `<div class="leg">${ic}<span class="lg">${esc(legName(l.label))}${l.game ? `<small>${esc(l.game)}${l.start && l.state === "pre" && !lv ? " · " + when(l.start) : ""}</small>` : ""}${liveLine(lv)}</span>
+      <span style="display:flex;align-items:center;gap:8px">${state === "won" || state === "lost" ? `<span class="${state === "won" ? "w" : "lz"}">${state === "won" ? "Hit" : "Missed"}</span>` : l.p == null ? `<span class="note">no read</span>` : `${bar(l.p)}<span class="num" style="min-width:36px;text-align:right">${pct(l.p)}</span><span class="tag" style="font-size:10px">${esc(l.src)}</span>`}</span></div>`;
+}
+function betCard(b, i) {
   const cls = {"Cash out":"cash", "Hold":"hold", "Won":"won", "Lost":"lost"}[b.signal] || "hold";
-  const done = b.legs.filter(l => l.state === "won").length;
   const ttl = b.legs.length > 1 ? `${b.legs.length}-leg combo` : esc(b.legs[0].label);
-  const leg = l => { const ic = l.state === "won" ? `<b class="w">✓</b>` : l.state === "lost" ? `<b class="lz">✗</b>` : l.state === "live" ? `<b style="color:var(--warn)">●</b>` : `<span style="color:var(--dim)">○</span>`;
-    return `<div class="leg">${ic}<span class="lg">${esc(legName(l.label))}${l.game ? `<small>${esc(l.game)}${l.start && l.state === "pre" ? " · " + when(l.start) : ""}</small>` : ""}</span>
-      <span style="display:flex;align-items:center;gap:8px">${l.state === "won" || l.state === "lost" ? `<span class="${l.state === "won" ? "w" : "lz"}">${l.state === "won" ? "Hit" : "Missed"}</span>` : l.p == null ? `<span class="note">no read</span>` : `${bar(l.p)}<span class="num" style="min-width:36px;text-align:right">${pct(l.p)}</span><span class="tag" style="font-size:10px">${esc(l.src)}</span>`}</span></div>`; };
-  return `<div class="bet ${cls}"><div class="bh"><span class="sig ${cls}">${esc(b.signal)}</span><span class="ttl">${ttl}${b.legs.length > 1 ? ` <span class="note" style="font:500 12.5px var(--body)">${done}/${b.legs.length} legs hit so far</span>` : ""}</span>
+  return `<div class="bet ${cls}"><div class="bh"><span class="sig ${cls}">${esc(b.signal)}</span><span class="ttl">${ttl}${b.legs.length > 1 ? ` <span class="note hitc" data-b="${i}" style="font:500 12.5px var(--body)">${hitText(b)}</span>` : ""}</span>
     <span class="note">${b.closes ? "settles " + esc(when(b.closes)) : ""}</span><a class="chip" href="https://kalshi.com/portfolio" target="_blank" rel="noopener">Open Kalshi →</a></div>
     <div class="bmon"><div><span>Paid</span><b>${usd(b.cost)}</b><div class="note">${fmt(b.contracts, 0)} × ${cents(b.entry)}</div></div>
       <div><span>Sell now</span><b>${b.bid > 0 ? usd(b.sellValue) : "—"}</b><div class="note">${b.bid > 0 ? cents(b.bid) + " bid" : "no buyer yet"}</div></div>
@@ -1110,7 +1264,7 @@ function betCard(b) {
       <div><span>If it wins</span><b>${usd(b.payout)}</b><div class="note">profit ${usd(b.payout - b.cost)}</div></div>
       <div><span>Status</span><b style="color:${b.status === "bad" ? "var(--less)" : b.status === "good" ? "var(--more)" : "var(--chalk)"}">${{bad:"Looks bad", good:"Ahead", ok:"Slipping", won:"Won", lost:"Lost", open:"Open"}[b.status] || "Open"}</b><div class="note">model value vs what you paid</div></div></div>
     <div class="note" style="color:var(--chalk)">${esc(b.why)}${b.sameGame ? " · same-game legs move together" : ""}</div>
-    <div class="legs">${b.legs.map(leg).join("")}</div></div>`;
+    <div class="legs" data-b="${i}">${b.legs.map(betLeg).join("")}</div></div>`;
 }
 
 // ---------------- accuracy ----------------
@@ -1270,7 +1424,7 @@ function renderHow() {
     <p class="note">Every pick and projected stat is saved before the game. Kalshi picks are graded by Kalshi's settlement and cross-checked with the ESPN box score; if the two disagree the pick is flagged and left out of the record. Pick6 picks and projected stats are graded against the ESPN box score. The Accuracy tab shows the record by platform, tier, bet type, stat and confidence, plus projection error. After 30+ graded picks on a stat, the model rescales its own confidence for it.</p>
     <h3 style="margin-top:14px">Version history</h3>
     <p class="note">Every update bumps the version: small batches of features add 0.1; a big overhaul moves to the next whole number.</p>
-    ${[["V3.4","Reliable refresh: each update now queues the next one about 30 minutes later, so the board no longer goes hours without updating when GitHub skips its scheduled runs"],["V3.3","Odds Board at the top of Top Picks: NFL and NBA side by side, each with a players dropdown and a teams-to-win dropdown, switchable between most likely and biggest payout; pick one to jump to that player or game · New sorts: 'biggest payout' on Top Picks, 'highest win odds' and 'biggest payout' on team winners"],["V3.2","Combos: tap + Combo on any Kalshi pick or team winner to build a combo slip with the model's combined chance and same-game warnings, then get a live market-maker price and buy it from the slip · The worker learns how Kalshi prices combo quotes from your own past combo fills and won't buy a combo until it can confirm that · Single orders switch to Kalshi's newer order endpoint automatically if the old one is retired"],["V3.1","⚡ One-click Kalshi orders: connect your own Cloudflare Worker on the My Bets tab, then every Kalshi pick, team winner and line gets a Buy button that opens an order ticket (live price, contracts, max price, cost and payout) and places the order only when you confirm · Worker caps order size and rejects the order if the price moved"],["V3.0","More data behind every projection: nflverse snap share, target and air-yards share, red-zone looks and expected TDs, Next Gen Stats, the official NFL injury report with practice status, ESPN depth charts and the official NBA injury report · Sportsbook consensus lines from The Odds API (optional key) · Bet buttons on every pick, team winner and line that open the exact Kalshi market with your side picked · Market Check bar on every pick: model vs Kalshi vs books · Far-from-market flag drops the tier a step · Kalshi picks graded by Kalshi's settlement with an ESPN cross-check; disagreements flagged, not counted · Data-sources strip, usage meters and a grading donut"],["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
+    ${[["V3.5","Live numbers on My Bets: every leg shows the player's live stat against your line with a progress bar and how much is left to go, team legs show the score and who's ahead, and each game shows the quarter and time left in it · Refreshes every 30 seconds while a game is on, straight from ESPN, without waiting for the board update · Legs flip to Hit or Missed as soon as they're decided, and the legs-hit count updates live"],["V3.4","Reliable refresh: each update now queues the next one about 30 minutes later, so the board no longer goes hours without updating when GitHub skips its scheduled runs"],["V3.3","Odds Board at the top of Top Picks: NFL and NBA side by side, each with a players dropdown and a teams-to-win dropdown, switchable between most likely and biggest payout; pick one to jump to that player or game · New sorts: 'biggest payout' on Top Picks, 'highest win odds' and 'biggest payout' on team winners"],["V3.2","Combos: tap + Combo on any Kalshi pick or team winner to build a combo slip with the model's combined chance and same-game warnings, then get a live market-maker price and buy it from the slip · The worker learns how Kalshi prices combo quotes from your own past combo fills and won't buy a combo until it can confirm that · Single orders switch to Kalshi's newer order endpoint automatically if the old one is retired"],["V3.1","⚡ One-click Kalshi orders: connect your own Cloudflare Worker on the My Bets tab, then every Kalshi pick, team winner and line gets a Buy button that opens an order ticket (live price, contracts, max price, cost and payout) and places the order only when you confirm · Worker caps order size and rejects the order if the price moved"],["V3.0","More data behind every projection: nflverse snap share, target and air-yards share, red-zone looks and expected TDs, Next Gen Stats, the official NFL injury report with practice status, ESPN depth charts and the official NBA injury report · Sportsbook consensus lines from The Odds API (optional key) · Bet buttons on every pick, team winner and line that open the exact Kalshi market with your side picked · Market Check bar on every pick: model vs Kalshi vs books · Far-from-market flag drops the tier a step · Kalshi picks graded by Kalshi's settlement with an ESPN cross-check; disagreements flagged, not counted · Data-sources strip, usage meters and a grading donut"],["V2.1","Auto-refresh while the page is open · A–D sureness grade on every game · My Bets: your Kalshi bets with model value and a cash-out signal · Team winners with a pick grade on the Projections tab · game-winner tracker on the Accuracy tab that grades every projected winner and suggests tweaks"],["V1.2","Tap any accuracy row, tile or day to see which picks hit or missed · projected winner, final score and combined total for every game · version and update times in the corner"],["V1.1","Redesign with team colors and player photos, picks grouped by game, Lock/Strong/Lean tiers, last-10 sparklines, matchup grades, streaks, line movement, player rest and workload, teammate and opponent injuries, usage trends, NBA pace, phone layout"],["V1.0","Kalshi + Pick6 picks for NFL and NBA, full stat projections, weather, rest and travel, defense vs position, self-grading accuracy tracker"]].map(([v, t]) => `<div class="fx" style="justify-content:flex-start;gap:14px"><b style="color:var(--brass);min-width:38px">${v}</b><span>${t}</span></div>`).join("")}
     <h3 style="margin-top:14px">Limits</h3>
     <p class="note">Free data doesn't say who guards whom, so "vs the defender" means what the defense allows to that position. nflverse stats update about once a day, so a game from last night may not be in the usage numbers yet. The Odds API free plan has 500 credits a month, so sportsbook lines refresh a few times a day for the soonest games. Injury news can break after the last refresh.</p></div></div>`;
 }
