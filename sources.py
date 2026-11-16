@@ -547,9 +547,22 @@ def box_summary(sport, eid):
     return {"done": done, "score": score, "teams": teams, "date": (comp.get("date") or "")[:10]}
 
 
+RESULTS = {}  # sport -> final scores seen while listing the season's games (feeds the opponent-adjusted ratings)
+
+
+def _result(e):
+    c = e["competitions"][0]
+    side = {t["homeAway"]: (t["team"]["abbreviation"], num(t.get("score"))) for t in c["competitors"]}
+    if "home" not in side or "away" not in side:
+        return None
+    return {"home": side["home"][0], "away": side["away"][0], "hs": side["home"][1], "as": side["away"][1],
+            "neutral": bool(c.get("neutralSite")), "t": e["date"]}
+
+
 def season_event_ids(sport, now):
     path = ESPN_PATH[sport]
     ids = {}
+    RESULTS[sport] = []
     if sport == "NFL":
         sb = get(f"{ESPN}/{path}/scoreboard") or {}
         wk = (sb.get("week") or {}).get("number") or 1
@@ -557,6 +570,9 @@ def season_event_ids(sport, now):
             for e in (get(f"{ESPN}/{path}/scoreboard", params={"week": w, "seasontype": 2}) or {}).get("events", []):
                 if e["status"]["type"]["completed"]:
                     ids[e["id"]] = e["date"][:10]
+                    r = _result(e)
+                    if r:
+                        RESULTS[sport].append(r)
     else:
         start = datetime(now.year if now.month >= 10 else now.year - 1, 10, 15, tzinfo=timezone.utc)
         d = start
@@ -568,6 +584,9 @@ def season_event_ids(sport, now):
             for e in sb.get("events", []):
                 if e["status"]["type"]["completed"] and (e.get("season") or {}).get("type") in (2, None):
                     ids[e["id"]] = e["date"][:10]
+                    r = _result(e)
+                    if r:
+                        RESULTS[sport].append(r)
     return ids
 
 

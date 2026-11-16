@@ -241,6 +241,42 @@ def grade_bet(pos, by_ticker, games, now):
     }
 
 
+def history(sign, limit_pages=5, title_cap=80):
+    """Settled bets from Kalshi settlements: what you picked, what it cost, what it paid, and your profit or loss."""
+    rows, cursor = [], None
+    for _ in range(limit_pages):
+        params = {"limit": 200}
+        if cursor:
+            params["cursor"] = cursor
+        d = _get("/portfolio/settlements", params=params, sign=sign)
+        rows += d.get("settlements") or []
+        cursor = d.get("cursor")
+        if not cursor:
+            break
+    out = []
+    for i, r in enumerate(rows):
+        yes_n, no_n = f(r.get("yes_count_fp", r.get("yes_count"))), f(r.get("no_count_fp", r.get("no_count")))
+        side = "yes" if yes_n >= no_n else "no"
+        n = yes_n if side == "yes" else no_n
+        cost = f(r.get("yes_total_cost_dollars")) + f(r.get("no_total_cost_dollars"))
+        if not n and not cost:
+            continue
+        fee = f(r.get("fee_cost"))
+        paid = f(r.get("revenue")) / 100
+        title, legs = r.get("ticker"), []
+        if i < title_cap:
+            m = market(r.get("ticker"))
+            title = m.get("title") or title
+            for lg in m.get("mve_selected_legs") or []:
+                legs.append({"label": (lg.get("yes_sub_title") or lg.get("market_ticker") or "").strip(), "side": lg.get("side", "yes")})
+        out.append({"ticker": r.get("ticker"), "title": title, "side": side, "contracts": round(n, 2), "cost": round(cost, 2),
+                    "fees": round(fee, 2), "paid": round(paid, 2), "pl": round(paid - cost - fee, 2),
+                    "result": "won" if paid > 0 else "lost", "settled": r.get("settled_time"), "legs": legs,
+                    "combo": "KXMVE" in (r.get("ticker") or "")})
+    out.sort(key=lambda x: x.get("settled") or "", reverse=True)
+    return out
+
+
 def main():
     sign = _signer()
     if not sign:
@@ -274,6 +310,14 @@ def main():
     except Exception as e:
         out["error"] = str(e)[:300]
         print("My Bets error:", e)
+    try:
+        hist = history(sign)
+        out["history"] = hist[:300]
+        out["historyTotals"] = {"n": len(hist), "won": sum(1 for h in hist if h["result"] == "won"), "cost": round(sum(h["cost"] for h in hist), 2),
+                                "pl": round(sum(h["pl"] for h in hist), 2)}
+    except Exception as e:
+        out["history"] = out.get("history") or []
+        print("My Bets history error:", e)
     os.makedirs(DATA, exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump(out, fh, separators=(",", ":"))

@@ -26,10 +26,20 @@ CV = {"pass_yds": 0.30, "rush_yds": 0.55, "rec_yds": 0.65, "rush_rec_yds": 0.50,
 PASSING = {"pass_yds", "pass_tds", "pass_cmp", "pass_att", "ints", "pass_rush_yds"}
 RECEIVING = {"rec_yds", "receptions", "targets", "long_rec"}
 RUSHING = {"rush_yds", "rush_att"}
-DEFAULT_SHRINK = 0.85
-MARGIN_SD = {"NFL": 13.5, "NBA": 12.5}
-TOTAL_SD = {"NFL": 13.0, "NBA": 18.0}
+MODEL_V = "4.0"  # bump when the probability model changes: learned calibration restarts so old and new don't stack
+DEFAULT_SHRINK = 0.78
+MARGIN_SD = {"NFL": 12.8, "NBA": 12.5}
+TOTAL_SD = {"NFL": 12.8, "NBA": 17.0}
 HOME_ADV = {"NFL": 1.5, "NBA": 2.5}
+# Walk-forward backtest (Nov 2026): the Vegas line beats our team model, so it carries most of the weight.
+VEGAS_MODEL_W = {"NFL": {"margin": 0.10, "total": 0.10}, "NBA": {"margin": 0.15, "total": 0.25}}
+RATING_K = {"NFL": 5, "NBA": 5}  # pseudo-games of shrinkage toward average in the opponent-adjusted ratings
+# NBA stat spreads and skew, fit on 6,000+ replayed player-games: points/PRA were too tight, assists too wide,
+# and right-skewed stats finish below their mean more often than a bell curve says.
+SD_MULT = {"points": 1.2, "pra": 1.2, "pts_reb": 1.15, "pts_ast": 1.1, "rebounds": 1.0, "reb_ast": 1.0, "assists": 0.85, "min": 0.95}
+MED_SHIFT = {"points": -0.10, "pra": -0.10, "pts_reb": -0.10, "pts_ast": -0.08, "rebounds": -0.10, "reb_ast": -0.08, "assists": -0.06}
+NB_R = {"blocks": 5.0, "steals": 10.0}  # count stats that vary more than a Poisson allows
+BIAS = {}  # "SPORT|stat" -> multiplier learned from our own graded projections (set by run.py)
 
 
 def phi(x):
@@ -44,6 +54,20 @@ def pois_over(lam, line):
     for i in range(0, k + 1):
         if i > 0:
             term *= lam / i
+        cdf += term
+    return max(0.0, min(1.0, 1 - cdf))
+
+
+def nb_over(mu, line, r):
+    """P(X > line) for a count with mean mu and negative-binomial dispersion r (r -> infinity is Poisson)."""
+    k = math.floor(line)
+    if mu <= 0:
+        return 0.0
+    p = r / (r + mu)
+    cdf, term = 0.0, p ** r
+    for i in range(0, k + 1):
+        if i > 0:
+            term *= (i - 1 + r) / i * (1 - p)
         cdf += term
     return max(0.0, min(1.0, 1 - cdf))
 
@@ -217,9 +241,8 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
         if ctx:
             if sport == "NBA":
                 if ctx.get("b2b"):
-                    add("Back-to-back", 0.96, "2nd night of a back-to-back")
-                elif (ctx.get("rest") or 0) >= 3:
-                    add("Rest", 1.01, f"{ctx['rest']} days rest")
+                    # replayed 195 back-to-back games: players finished at 1.03x their projection, not 0.96x
+                    add("Back-to-back", 0.995, "2nd night of a back-to-back")
                 if ctx.get("road", 0) >= 3:
                     add("Road trip", 0.98, f"Road game #{ctx['road']} in a row")
                 if ctx.get("travel", 0) >= 1500:
@@ -240,6 +263,9 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
         for f in factors:
             mult *= f[1]
         proj = base * mult
+        bm = BIAS.get(f"{sport}|{k}")
+        if bm:
+            proj *= bm
         sample = vals(cur)[:12] + vals(prev)[:6]
         sd_base = max(CV.get(k, 0.5) * max(proj, 1), 1.0 if k in COUNT else 2.5)
         if len(sample) >= 5:
@@ -248,6 +274,8 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
             sd = math.sqrt(0.5 * sd_s ** 2 + 0.5 * sd_base ** 2)
         else:
             sd = sd_base * 1.15
+        if sport == "NBA":
+            sd *= SD_MULT.get(k, 1.0)
         out[k] = {"proj": round(proj, 2), "base": round(base, 2), "sd": round(sd, 2), "n": len(vc),
                   "parts": {x: (round(v, 1) if v is not None else None) for x, v in parts.items()},
                   "nvs": len(vals(vs)), "nloc": len(vals(loc)), "factors": factors,
@@ -255,10 +283,13 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
     return grp, out
 
 
-def p_over(k, proj, sd, line):
+def p_over(k, proj, sd, line, sport="NBA"):
     if k in COUNT:
+        if sport == "NBA" and k in NB_R:
+            return nb_over(max(proj, 0.06), line, NB_R[k])
         return pois_over(max(proj, 0.06), line)
-    return phi((proj - line) / max(sd, 0.5))
+    shift = MED_SHIFT.get(k, 0.0) if sport == "NBA" else 0.0
+    return phi((proj + shift * sd - line) / max(sd, 0.5))
 
 
 def calibrate(p, calib, sport, k):
@@ -269,7 +300,38 @@ def calibrate(p, calib, sport, k):
 # ======================================================================================
 # Game projection (winner / spread / total)
 # ======================================================================================
-def project_game(g, stand, ctx_h, ctx_a, wx, vegas_m):
+def build_ratings(sport, results):
+    """Opponent-adjusted net ratings (points above an average team) from every final this season.
+    Replayed on 100+ games per sport this beat raw points-for/against: NBA winner accuracy 66% -> 72%."""
+    gp, R, ha_sum, ha_n = {}, {}, 0.0, 0
+    for r in results:
+        if r.get("hs") is None or r.get("as") is None:
+            continue
+        for t in (r["home"], r["away"]):
+            gp[t] = gp.get(t, 0) + 1
+        if not r.get("neutral"):
+            ha_sum += r["hs"] - r["as"]
+            ha_n += 1
+    if len(results) < 20:
+        return None
+    # home edge: this season's measured home margin, anchored to the long-run value
+    prior_ha, prior_n = HOME_ADV[sport], 300 if sport == "NBA" else 150
+    ha = (ha_sum + prior_ha * prior_n) / (ha_n + prior_n)
+    K = RATING_K[sport]
+    R = {t: 0.0 for t in gp}
+    for _ in range(25):
+        acc = {t: 0.0 for t in gp}
+        for r in results:
+            if r.get("hs") is None or r.get("as") is None:
+                continue
+            m = r["hs"] - r["as"] - (0 if r.get("neutral") else ha)
+            acc[r["home"]] += m + R[r["away"]]
+            acc[r["away"]] += -m + R[r["home"]]
+        R = {t: acc[t] / (gp[t] + K) for t in gp}
+    return {"R": R, "gp": gp, "ha": round(ha, 2)}
+
+
+def project_game(g, stand, ctx_h, ctx_a, wx, vegas_m, ratings=None):
     sp = g["sport"]
     h, a = stand.get(g["home"]["abbr"]) or {}, stand.get(g["away"]["abbr"]) or {}
     vals = [t["pf"] for t in stand.values() if t.get("pf")]
@@ -282,15 +344,23 @@ def project_game(g, stand, ctx_h, ctx_a, wx, vegas_m):
     he = (reg(h, "pf") + reg(a, "pa")) / 2
     ae = (reg(a, "pf") + reg(h, "pa")) / 2
     notes = []
+    ha = HOME_ADV[sp]
+    rt = None
+    if ratings and g["home"]["abbr"] in ratings["R"] and g["away"]["abbr"] in ratings["R"] \
+            and ratings["gp"].get(g["home"]["abbr"], 0) >= 4 and ratings["gp"].get(g["away"]["abbr"], 0) >= 4:
+        rt = ratings
+        ha = ratings["ha"]
+    base_margin = he - ae
     if not g.get("neutral"):
-        he += HOME_ADV[sp] / 2
-        ae -= HOME_ADV[sp] / 2
-        notes.append(f"Home edge +{HOME_ADV[sp]}")
+        he += ha / 2
+        ae -= ha / 2
+        notes.append(f"Home edge +{ha:.1f}")
+    ctx_m = 0.0  # rest/travel/weather nudges, kept apart so they ride on top of the ratings margin
     for side, ctx, nm in (("h", ctx_h, g["home"]["abbr"]), ("a", ctx_a, g["away"]["abbr"])):
         adj = 0
         if ctx:
             if sp == "NBA" and ctx.get("b2b"):
-                adj -= 1.5
+                adj -= 0.75
                 notes.append(f"{nm} on a back-to-back")
             if sp == "NBA" and ctx.get("road", 0) >= 4:
                 adj -= 0.5
@@ -302,8 +372,10 @@ def project_game(g, stand, ctx_h, ctx_a, wx, vegas_m):
                 adj -= 0.5
         if side == "h":
             he += adj
+            ctx_m += adj
         else:
             ae += adj
+            ctx_m -= adj
     if sp == "NFL" and wx and not g["venue"]["indoor"]:
         if (wx.get("wind") or 0) >= 15:
             he -= 1.5
@@ -314,15 +386,18 @@ def project_game(g, stand, ctx_h, ctx_a, wx, vegas_m):
             ae -= 1
             notes.append("Rain expected")
     margin, total = he - ae, he + ae
+    if rt:  # opponent-adjusted ratings replace the raw points-for/against margin
+        margin = rt["R"][g["home"]["abbr"]] - rt["R"][g["away"]["abbr"]] + (0 if g.get("neutral") else ha) + ctx_m
     m_model, t_model = margin, total
+    w = VEGAS_MODEL_W[sp]
     if vegas_m is not None:
-        margin = 0.5 * margin + 0.5 * vegas_m
+        margin = w["margin"] * margin + (1 - w["margin"]) * vegas_m
     if g.get("ou"):
-        total = 0.5 * total + 0.5 * g["ou"]
+        total = w["total"] * total + (1 - w["total"]) * g["ou"]
     hp, ap = (total + margin) / 2, (total - margin) / 2
     return {"homePts": round(hp, 1), "awayPts": round(ap, 1), "margin": round(margin, 1), "total": round(total, 1),
             "pHome": round(phi(margin / MARGIN_SD[sp]), 3), "modelMargin": round(m_model, 1), "modelTotal": round(t_model, 1),
-            "vegasMargin": vegas_m, "notes": notes}
+            "vegasMargin": vegas_m, "notes": notes, "rated": bool(rt)}
 
 
 def implied_totals(g, gp):
@@ -349,7 +424,7 @@ def market_mid(m):
     return (yb + ya) / 2 if yb > 0 else ya / 2
 
 
-MODEL_W = 0.4  # weight on our model vs the market price when a market exists
+MODEL_W = 0.2  # weight on our model vs the market price when a market exists (graded Kalshi picks: the market alone beat the model; 10-20% model was best)
 
 
 def blend(p_model, mid, w=MODEL_W):

@@ -11,7 +11,7 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "3.9"
+VERSION = "4.0"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -104,6 +104,8 @@ def build_sport(sport, now, track, geo):
     boxes = {k: v for k, v in boxes.items() if k in ids}
     S.save_json(bpath, boxes)
     dvp = M.build_dvp(sport, boxes, roster)
+    ratings = M.build_ratings(sport, S.RESULTS.get(sport, []))
+    S.log(f"[ratings] {sport}: {len(S.RESULTS.get(sport, []))} finals, " + (f"home edge {ratings['ha']}" if ratings else "not enough games yet"))
     usage = X.build_usage(sport, boxes)
     S.log(f"[dvp] {sport}: {len(boxes)} box scores, {len(usage['players'])} players with usage")
 
@@ -135,7 +137,7 @@ def build_sport(sport, now, track, geo):
                 ew = g["espnWeather"]
                 wx[gid] = {"temp": ew.get("temperature"), "desc": ew.get("displayValue"), "wind": None, "src": "ESPN"}
         vm = S.vegas_margin(g)
-        gproj[gid] = M.project_game(g, stand, ctx[(gid, g["home"]["abbr"])], ctx[(gid, g["away"]["abbr"])], wx.get(gid), vm)
+        gproj[gid] = M.project_game(g, stand, ctx[(gid, g["home"]["abbr"])], ctx[(gid, g["away"]["abbr"])], wx.get(gid), vm, ratings)
 
     # attach props to games + ESPN players
     need = {}
@@ -256,7 +258,7 @@ def build_sport(sport, now, track, geo):
                 continue
             mu = M.mean(vals)
             proj = {"proj": mu, "sd": max(M.CV.get(p["key"], 0.5) * max(mu, 1), 1.0), "n": len(vals), "factors": []}
-        raw = M.p_over(p["key"], proj["proj"], proj["sd"], p["line"])
+        raw = M.p_over(p["key"], proj["proj"], proj["sd"], p["line"], sport)
         pm = M.calibrate(raw, calib, sport, p["key"])
         gl = logs.get(p["pid"]) or []
         l10 = [x["s"].get(p["key"]) for x in gl[:10] if isinstance(x["s"].get(p["key"]), (int, float))]
@@ -356,7 +358,7 @@ def build_sport(sport, now, track, geo):
             continue
         model_p = p
         far = abs(model_p - M.market_mid(m)) >= FAR_FROM_MARKET
-        p = M.blend(p, M.market_mid(m), 0.35)
+        p = M.blend(p, M.market_mid(m), 0.25)
         ks = M.kalshi_side(p, m, 0.04)
         gpicks.append({"id": m["id"], "platform": "Kalshi", "sport": sport, "gameId": g["id"], "type": m["key"], "label": label,
                        "line": m["line"], "team": m.get("team"), "title": m["title"], "ticker": m["ticker"], "url": m["url"],
@@ -604,10 +606,15 @@ def grade(track, now):
             av = vals.get(k)
             if isinstance(av, (int, float)):
                 r = perr.setdefault(f"{e['s']}|{k}", [0, 0.0, 0.0, 0])
+                while len(r) < 6:  # [n, sum|err|, sum actual, within 25%, sum signed raw error, n signed]
+                    r.append(0.0 if len(r) == 4 else 0)
                 r[0] += 1
                 r[1] = round(r[1] + abs(pv - av), 2)
                 r[2] = round(r[2] + av, 2)
                 r[3] += 1 if abs(pv - av) <= max(0.25 * max(av, pv), 1.0) else 0
+                b0 = M.BIAS.get(f"{e['s']}|{k}") or 1.0  # undo the correction in force so bias is measured on the raw projection
+                r[4] = round(r[4] + (pv / b0 - av), 3)
+                r[5] += 1
     track["recent"] = [fill_graded(x) for x in recent[-5000:]]
     track["open"] = {k: v for k, v in (track.get("open") or {}).items() if S.parse_t(v[1]) and S.parse_t(v[1]) > now - timedelta(hours=6)}
     track["daily"] = dict(sorted(daily.items())[-60:])
@@ -618,6 +625,15 @@ def grade(track, now):
             kk = M.clamp((hits / cnt - 0.5) / (sp / cnt - 0.5), 0.25, 1.2)
             calib[k] = round((kk * cnt + M.DEFAULT_SHRINK * 40) / (cnt + 40), 3)
     track["calib"] = calib
+    # learn: nudge each stat's projection by half of its measured average over/under-shoot (needs 150+ graded games, capped at 5%)
+    bias = {}
+    for k, v in perr.items():
+        if len(v) >= 6 and v[5] >= 150 and v[2] > 0:
+            mean_act = v[2] / max(v[0], 1)
+            if mean_act >= 0.3:
+                bias[k] = round(M.clamp(1 - 0.5 * (v[4] / v[5]) / mean_act, 0.95, 1.05), 4)
+    track["bias"] = bias
+    M.BIAS = bias
     if n:
         track["gradedAt"] = now.isoformat()[:19] + "Z"
     S.log(f"[grade] graded {n} ({nk} by Kalshi settlement, {nx} disputed); pending {len(pend)} picks, {len(pproj)} projections")
@@ -627,6 +643,13 @@ def main():
     t0 = time.time()
     now = datetime.now(timezone.utc)
     track = S.load_json(f"{DATA}/track.json", {})
+    if track.get("modelV") != M.MODEL_V:  # the probability model changed: restart the learned shrink so corrections don't stack
+        track["cal"], track["calib"], track["bias"] = {}, {}, {}
+        for v in (track.get("projErr") or {}).values():
+            del v[4:]
+        track["modelV"] = M.MODEL_V
+        S.log(f"[model] version {M.MODEL_V}: calibration restarted")
+    M.BIAS = track.get("bias") or {}
     geo = S.load_json(f"{DATA}/cache/geo.json", {})
     old_board = S.load_json(f"{DATA}/board.json", {})
     old_players = S.load_json(f"{DATA}/players.json", {})

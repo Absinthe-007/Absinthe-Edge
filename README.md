@@ -17,6 +17,14 @@ NFL + NBA picks for **Kalshi** and **DraftKings Pick6**, with a full projected s
 - Projects every game's score, win chance, spread and total.
 - **Self-checking:** saves every pick and projection before the game, grades them against the ESPN box score afterward, and shows the record by platform, bet type, stat and confidence, plus calibration and projection error. Once a stat has 30+ graded picks, the model rescales its own confidence for that stat.
 
+## V4.0: accuracy pass (backtested)
+Every change below was tested by replaying this season before it shipped: 197 NBA + 149 NFL games against their closing Vegas lines, 6,000+ NBA player-games, and 3,200 graded Kalshi picks.
+- **Games:** the Vegas line was more accurate than the team model, so the model's weight dropped (margin 50% to 10-15%, total to 10-25%). Games without a line use opponent-adjusted team ratings and a home edge measured from this season.
+- **Props:** per-stat spreads and skew fixed (points/PRA ran too tight, assists too wide), blocks and steals use a negative-binomial count model, and the Kalshi blend is 20% model / 80% market.
+- **Removed** a back-to-back player penalty and a rest bonus that the replay did not support.
+- **Self-correcting:** the tracker stores signed projection error per stat and nudges its own projections (max 5%) once it has 150 graded games. Learned confidence restarts when the model version changes.
+- Backtest scripts and results are summarized in `BACKTEST.md`.
+
 ## V3.2: combos
 Tap **+ Combo** on any Kalshi pick or team winner to build a combo slip. It shows the model's combined chance and warns when legs share a game. **Get Kalshi price** asks Kalshi's market makers for a live quote; **Buy** takes it, if it hasn't moved up more than 2¢. The worker learns how Kalshi prices combo quotes from your own past combo fills, and refuses combos until it can confirm that.
 
