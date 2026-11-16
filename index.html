@@ -1154,7 +1154,7 @@ function historyHtml() {
   if (!hs.length) return "";
   const t = MB.historyTotals || {}, won = hs.filter(x => x.result === "won").length, pl = hs.reduce((a, x) => a + (x.pl || 0), 0), inn = hs.reduce((a, x) => a + (x.cost || 0), 0);
   const tile = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  const row = x => `<div class="panel" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b>${esc(x.title || x.ticker)}</b><b class="${x.pl >= 0 ? "up" : "dn"}">${signUsd(x.pl)}</b></div>
+  const row = x => `<div class="panel" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b>${esc(String(x.title || x.ticker).split(/,(?=(?:yes|no) )/i).map(legName).join(" · "))}</b><b class="${x.pl >= 0 ? "up" : "dn"}">${signUsd(x.pl)}</b></div>
     <div class="note">${x.result === "won" ? "Won" : "Lost"} · ${esc(String(x.side).toUpperCase())} × ${x.contracts} · paid ${usd(x.cost)}${x.fees ? " + " + usd(x.fees) + " fees" : ""} · got back ${usd(x.paid)} · ${esc(new Date(x.settled).toLocaleDateString([], {month: "short", day: "numeric"}))}${x.combo ? " · combo" : ""}</div>
     ${(x.legs || []).length ? `<div class="note">${x.legs.map(l => esc(legName((l.side === "no" ? "NO " : "") + l.label))).join(" · ")}</div>` : ""}</div>`;
   return `<h2 style="margin-top:22px">Past bets <span class="cnt">${hs.length} settled</span></h2>
