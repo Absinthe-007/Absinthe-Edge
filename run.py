@@ -11,7 +11,8 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.4"
+VERSION = "4.5"
+PICK_V = "4.4"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -480,7 +481,11 @@ def save_pending(track, board, now):
                 continue
             if p["platform"] == "Kalshi" and not (p["rec"] or p.get("main")):
                 continue
-            pend[p["id"]] = {"s": sport, "pf": p["platform"], "g": p["gameId"], "t": p["start"], "pid": p.get("pid"),
+            old = pend.get(p["id"])
+            same = bool(old) and old.get("side") == p["side"]
+            p0 = old.get("p0") if same else p.get("price")   # first price/line we saw for this side; later runs only update the latest
+            l0 = old.get("l0") if same else p["line"]
+            pend[p["id"]] = {"p0": p0, "l0": l0, "mv": PICK_V, "s": sport, "pf": p["platform"], "g": p["gameId"], "t": p["start"], "pid": p.get("pid"),
                              "nm": p.get("player") or p.get("label"), "k": p.get("key") or p.get("type"), "line": p["line"],
                              "side": p["side"], "prob": p["prob"], "raw": p.get("rawP"), "rec": bool(p["rec"]), "price": p.get("price"),
                              "team": p.get("team"), "stat": p.get("stat") or p.get("label"), "type": "prop" if p.get("pid") else p.get("type"),
@@ -496,6 +501,7 @@ def grade(track, now):
     agg = track.setdefault("agg", {})
     daily = track.setdefault("daily", {})
     cal = track.setdefault("cal", {})
+    clv = track.setdefault("clv", {})
     bins = track.setdefault("bins", {})
     perr = track.setdefault("projErr", {})
     recent = track.setdefault("recent", [])
@@ -581,8 +587,25 @@ def grade(track, now):
             profit = (1 - e["price"]) / e["price"] if res == "w" else -1.0
         n += 1
         tag = "rec" if e["rec"] else "lean"
-        for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}") + ((f"tier|{e['tier']}",) if e.get("tier") else ()):
+        mv = e.get("mv") or "old"
+        for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}", f"mv|{mv}") + ((f"tier|{e['tier']}",) if e.get("tier") else ()):
             bump(agg, f"{tag}|{key}", res, profit)
+        # closing-line value: did the market move toward our side after we first saw it? (Kalshi: price of our side, Pick6: the line)
+        if res in ("w", "l", "push"):
+            x = None
+            if e["pf"] == "Kalshi" and e.get("p0") and e.get("price"):
+                x = e["price"] - e["p0"]
+            elif e["pf"] == "Pick6" and e.get("l0") is not None and e.get("line") is not None:
+                x = (e["line"] - e["l0"]) * (1 if e["side"] == "MORE" else -1)
+            if x is not None:
+                for ck in (f"{tag}|all", f"{tag}|{e['pf']}", f"{tag}|mv|{mv}"):
+                    c = clv.setdefault(ck, [0, 0, 0, 0.0, 0])  # [n, moved our way, moved against, sum of Kalshi price move, n Kalshi]
+                    c[0] += 1
+                    c[1] += 1 if x > 1e-9 else 0
+                    c[2] += 1 if x < -1e-9 else 0
+                    if e["pf"] == "Kalshi":
+                        c[3] = round(c[3] + x, 4)
+                        c[4] += 1
         if res == "disp":
             pass
         elif res in ("w", "l"):
@@ -600,7 +623,7 @@ def grade(track, now):
             bb[0] += 1
             bb[1] += 1 if res == "w" else 0
         recent.append([e["s"], e["pf"], e["nm"], e["stat"], e["line"], e["side"], e["prob"], val if not isinstance(val, str) else None, res,
-                       e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier"), src])
+                       e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier"), src, mv])
     for key, e in list(pproj.items()):
         t = S.parse_t(e["t"])
         if not t or now < t + timedelta(hours=GRADE_AFTER_H[e["s"]]):
@@ -705,7 +728,7 @@ def summary(track):
         return {"w": r.get("w", 0), "l": r.get("l", 0), "p": r.get("p", 0), "v": r.get("v", 0), "d": r.get("d", 0), "pct": round(r["w"] / n, 4) if n else None,
                 "roi": round(r["pl"] / r["stake"], 4) if r.get("stake") else None}
     out = {"agg": {k: pct(k) for k in agg}, "daily": track.get("daily", {}), "bins": track.get("bins", {}),
-           "projErr": track.get("projErr", {}), "recent": track.get("recent", [])[-250:], "calib": track.get("calib", {}),
+           "projErr": track.get("projErr", {}), "recent": track.get("recent", [])[-250:], "calib": track.get("calib", {}), "clv": track.get("clv", {}),
            "pending": len(track.get("pending", {})), "since": track.get("since"), "gradedAt": track.get("gradedAt")}
     track.setdefault("since", datetime.now(timezone.utc).date().isoformat())
     out["since"] = track["since"]

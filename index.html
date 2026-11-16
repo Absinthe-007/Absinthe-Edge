@@ -1429,7 +1429,7 @@ const srcBadge = s => s === "X" ? `<span class="srcb X" title="Kalshi and ESPN d
 function gradedRows() {
   const raw = (T && T.recent) || ((B.summary || {}).recent) || [];
   return raw.map(r => {
-    const o = {s:r[0], pf:r[1], nm:r[2], stat:r[3], line:r[4], side:r[5], prob:r[6], val:r[7], res:r[8], date:r[9], rec:!!r[10], price:r[11], key:r[12], type:r[13], tier:r[14], src:r[15] || "E"};
+    const o = {s:r[0], pf:r[1], nm:r[2], stat:r[3], line:r[4], side:r[5], prob:r[6], val:r[7], res:r[8], date:r[9], rec:!!r[10], price:r[11], key:r[12], type:r[13], tier:r[14], src:r[15] || "E", mv:r[16] || "old"};
     if (!o.type) { const st = (o.stat || "").toLowerCase(); o.type = st.endsWith(" to win") ? "ml" : st.includes(" wins by ") ? "spread" : st.startsWith("total over") ? "total" : "prop"; }
     if (!o.key) o.key = o.type !== "prop" ? o.type : (LBL_KEY[o.stat] || o.stat);
     if (o.tier === undefined && o.rec) o.tier = o.pf === "Pick6" ? (o.prob >= .68 ? "Lock" : o.prob >= .62 ? "Strong" : "Lean")
@@ -1445,6 +1445,7 @@ function inGroup(key, r) {
   if (a === "conf") return CONF(r.prob) === b;
   if (a === "stat") return r.s === b && (r.key === c || (LBL[c] && r.stat === LBL[c]));
   if (a === "day") return r.date === b;
+  if (a === "mv") return r.mv === b;
   if (b) return r.s === a && r.pf === b;
   return r.s === a || r.pf === a;
 }
@@ -1484,6 +1485,22 @@ function groupPanel() {
   </div>`;
 }
 function bar(v) { return `<div class="mini" style="min-width:80px"><b style="width:${Math.max(0,Math.min(100,v*100))}%;background:${v >= .5 ? "var(--more)" : "var(--less)"}"></b></div>`; }
+function mvKeys() {
+  const ks = new Set(Object.keys((B.summary || {}).agg || {}).filter(k => /^(rec|lean)\|mv\|/.test(k)).map(k => k.split("|")[2]));
+  return [...ks].sort((a, b) => a === "old" ? -1 : b === "old" ? 1 : a.localeCompare(b, undefined, {numeric: true}));
+}
+// closing-line value: how often the market moved toward our side after we first saw the pick
+function clvPanel() {
+  const c = (B.summary || {}).clv || {};
+  const row = (lab, k) => { const r = c[k]; if (!r || !r[0]) return ""; const dec = r[1] + r[2], toward = dec ? r[1] / dec : null;
+    const cents = r[4] ? r[3] / r[4] * 100 : null;
+    return `<tr><td class="l">${esc(lab)}</td><td>${r[0]}</td><td>${toward == null ? "—" : `<span class="${toward >= .5 ? "up" : "dn"}">${pct(toward, 0)}</span>`}</td><td>${cents == null ? "—" : `<span class="${cents >= 0 ? "up" : "dn"}">${cents >= 0 ? "+" : ""}${cents.toFixed(1)}¢</span>`}</td></tr>`; };
+  const keys = ["rec|all", "rec|Kalshi", "rec|Pick6", "lean|all", ...Object.keys(c).filter(k => /^(rec|lean)\|mv\|/.test(k)).sort()];
+  const body = keys.map(k => { const [t, a, b] = k.split("|"); return row((t === "rec" ? "Best plays" : "All leans") + " · " + (a === "mv" ? (b === "old" ? "before version tracking" : "model " + b) : a), k); }).join("");
+  return `<h2>Closing-line value <span class="cnt">did the market move our way after we picked?</span></h2>
+    ${body ? `<div class="tbl"><table><thead><tr><th class="l">Group</th><th>Picks</th><th>Market moved our way</th><th>Avg Kalshi move</th></tr></thead><tbody>${body}</tbody></table></div><p class="note">Above 50% means we are getting a better price than the final one, the best early sign a model has real edge. Needs a few hundred picks to mean much.</p>`
+      : `<div class="empty">Starts filling as the next games are graded.</div>`}`;
+}
 function aggRows(prefix, keys, label) {
   return keys.map(k => [k, label(k), aggr("rec|"+prefix+k), aggr("lean|"+prefix+k)]).filter(r => (r[2].w||0)+(r[2].l||0)+(r[3].w||0)+(r[3].l||0) > 0)
     .map(([k, n, r, l]) => { const key = prefix + k, on = G.key === key;
@@ -1540,7 +1557,9 @@ function renderAcc() {
       ${aggRows("tier|", ["Lock","Strong","Lean"], k => k + " tier")}
       ${aggRows("type|", ["prop","ml","spread","total"], k => TYPE[k])}
       ${aggRows("conf|", ["70+","65-70","60-65","55-60","50-55"], k => "Confidence " + k + "%")}
+      ${aggRows("mv|", mvKeys(), k => k === "old" ? "Before version tracking" : "Pick model " + k)}
     </tbody></table></div>
+    ${clvPanel()}
     <h2>${S.sport} by stat</h2>
     ${statKeys.length ? `<div class="tbl"><table><thead><tr><th class="l">Stat</th><th>Best plays</th><th>Hit %</th><th></th><th>ROI</th><th>All leans</th><th>Hit %</th></tr></thead><tbody>${aggRows("stat|"+S.sport+"|", statKeys, k => LBL[k] || TYPE[k] || k)}</tbody></table></div>` : `<div class="empty">No graded ${S.sport} picks yet.</div>`}
     <h2>${S.sport} projection error <span class="cnt">projected stat line vs what happened</span></h2>
