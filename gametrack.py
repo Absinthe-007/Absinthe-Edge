@@ -15,6 +15,7 @@ import requests
 
 DATA = "data"
 OUT = f"{DATA}/gametrack.json"
+RESET_ID = "2026-11-16-fresh-start"  # keep in step with run.py
 ESPN = "https://site.api.espn.com/apis/site/v2/sports"
 PATH = {"NBA": "basketball/nba", "NFL": "football/nfl"}
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -285,11 +286,14 @@ def main():
     now = datetime.now(timezone.utc)
     board = load(f"{DATA}/board.json", {})
     st = load(OUT, {})
+    if st.get("resetId") != RESET_ID:  # one-time fresh start (same marker as run.py)
+        print(f"Game tracker reset: {len(st.get('rows') or [])} graded games and {len(st.get('pending') or {})} saved games dropped")
+        st = {}
     pending, rows = st.get("pending", {}), st.get("rows", [])
     graded = grade(pending, rows, now)
     saved = snapshot(board, pending, now)
     rows = rows[-KEEP_ROWS:]
-    out = {"updated": now.isoformat()[:19] + "Z", "since": st.get("since") or now.date().isoformat(),
+    out = {"resetId": RESET_ID, "updated": now.isoformat()[:19] + "Z", "since": st.get("since") or now.date().isoformat(),
            "pending": pending, "rows": rows, "summary": summarize(rows)}
     os.makedirs(DATA, exist_ok=True)
     with open(OUT, "w") as fh:
