@@ -277,11 +277,12 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}tr.sel td{backgro
 .kbtn.ghost{background:transparent;color:var(--ks);border:1px solid rgba(63,201,192,.5);box-shadow:none}
 .kbtn.ghost.in{background:var(--ksbg);color:var(--chalk)}
 .betrow{gap:8px}
-.cslip{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:45;display:flex;align-items:center;gap:12px;
+.cslip{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:60;display:flex;align-items:center;gap:12px;
   background:linear-gradient(135deg,#17233f,#1b2a4a);border:1px solid rgba(169,139,255,.45);border-radius:16px;padding:10px 12px 10px 16px;box-shadow:0 12px 40px rgba(0,0,0,.45);max-width:calc(100% - 32px)}
 .cslip b{font:800 18px var(--display)}.cslip small{color:var(--muted);display:block;font-size:11.5px}
 @media (max-width:680px){.cslip{bottom:calc(76px + env(safe-area-inset-bottom,0px));left:16px;right:16px;transform:none;max-width:none}.cslip>div{flex:1;min-width:0}}
 .cslip>div{min-width:180px}
+#tmodal.on~.cslip{display:none}
 .cleg{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .cleg:last-child{border-bottom:0}.cleg .nm{flex:1;min-width:0}.cleg .nm small{display:block;color:var(--muted);font-size:11.5px}
 .cleg button{background:none;border:0;color:var(--dim);font-size:16px}
@@ -736,8 +737,10 @@ function renderPlayers() {
 }
 
 // ---------------- player modal ----------------
+let CUR_PID = null;
 function openPlayer(pid) {
   const pl = sp().players[pid]; if (!pl) return;
+  CUR_PID = pid;
   const d = (P[S.sport] || {})[pid];
   const g = gameOf(pl.gameId) || {};
   const lines = sp().picks.filter(p => p.pid === pid && (p.platform === "Pick6" || p.main || p.rec)).sort((a,b)=>a.key.localeCompare(b.key)||a.line-b.line);
@@ -986,7 +989,14 @@ function toggleLeg(leg) {
     if (CS.some(l => l.ticker.split("-").slice(0, 2).join("-") === leg.ticker.split("-").slice(0, 2).join("-") && l.ticker.split("-")[0] === leg.ticker.split("-")[0] && /GAME$/.test(l.ticker.split("-")[0]))) { alertSlip("You already have a winner from that game."); return; }
     CS.push(leg);
   }
-  saveCombo(); const y = window.scrollY; render(); window.scrollTo({top: y});
+  saveCombo(); const y = window.scrollY; render(); window.scrollTo({top: y}); refreshPlayerModal();
+}
+// render() redraws the page behind an open player popup but not the popup itself, so its + Combo buttons went stale
+function refreshPlayerModal() {
+  const m = $("#modal"); if (!CUR_PID || !m.classList.contains("on")) return;
+  const top = m.scrollTop, on = document.querySelector("#statsel .chip.on"), k = on && on.dataset.k;
+  openPlayer(CUR_PID); m.scrollTop = top;
+  const b = k && document.querySelector(`#statsel [data-k="${k}"]`); if (b) showFactor(CUR_PID, k, b);
 }
 function toggleLegPick(id) {
   const p = findPick(id); if (!p) return;
@@ -1023,7 +1033,7 @@ function drawSlipBar() {
   if (!el) { el = document.createElement("div"); el.id = "cslip"; el.className = "cslip"; document.body.appendChild(el); }
   const st = comboStats();
   el.innerHTML = `<div><b>${CS.length}-leg combo</b><small>${slipMsg ? esc(slipMsg) : `model ${pct(st.fair, 1)} to hit${st.sameGame ? " · same-game legs" : ""}${CS.some(l => l.p6) ? " · " + CS.filter(l => l.p6).length + " on Pick6" : ""}`}</small></div>
-    <button class="kbtn sm" onclick="openComboTicket()">Review →</button><button class="kbtn ghost sm" onclick="CS=[];saveCombo();render()" aria-label="Clear combo">✕</button>`;
+    <button class="kbtn sm" onclick="openComboTicket()">Review →</button><button class="kbtn ghost sm" onclick="CS=[];saveCombo();render();refreshPlayerModal()" aria-label="Clear combo">✕</button>`;
 }
 let CT = null;
 function openComboTicket() {
@@ -1087,7 +1097,7 @@ function closeTicket() { if (CT && CT.quote && CT.quote.rfqId && !CT.done) wcall
 $("#tmodal").addEventListener("click", e => { if (e.target.id === "tmodal") closeTicket(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && TK) closeTicket(); });
 
-function closeModal() { $("#modal").classList.remove("on"); document.body.style.overflow = ""; }
+function closeModal() { CUR_PID = null; $("#modal").classList.remove("on"); document.body.style.overflow = ""; }
 $("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 
