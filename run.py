@@ -11,7 +11,7 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.3"
+VERSION = "4.4"
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -302,6 +302,19 @@ def build_sport(sport, now, track, geo):
             base.update(ks)
             base.update({"title": p["title"], "ticker": p["ticker"], "url": p["url"], "yesAsk": p["yesAsk"], "noAsk": p["noAsk"]})
             base["rec"] = base["rec"] and proj["n"] >= 3 and not injured
+            if base["rec"]:
+                # V4.4 gate, from 3,200 graded Kalshi picks: hit rate trailed the Kalshi price in every price band (the model alone
+                # has no edge), and tails were the worst (model said 13%, actual 6% under 10c). So: no long shots, and a recommendation
+                # needs an independent sportsbook check; without one it needs a much bigger margin.
+                px = base["price"]
+                if not (0.12 <= px <= 0.88):
+                    base["rec"] = False
+                elif cp is not None:
+                    book_p = cp if base["side"] == "YES" else 1 - cp
+                    if book_p - px < 0.02:
+                        base["rec"], base["gate"] = False, "books disagree"
+                elif base["edge"] < 0.10:
+                    base["rec"], base["gate"] = False, "no book check"
         picks.append(base)
     for p in picks:  # express model/market probability for the side we picked
         if p["side"] in ("LESS", "NO"):
