@@ -477,6 +477,12 @@ ODDS_MARKETS = {
 ODDS_REFRESH_H = 12
 ODDS_WINDOW_H = 40
 ODDS_FREE = 500
+# Free plan: each sport gets its own slice of the daily credit allowance so one can't starve the other
+# (unused credits still flow to the other sport), and NBA is trimmed to its 3 core markets.
+# A paid plan (more than ODDS_FREE credits left) lifts the caps and fetches every market.
+ODDS_SHARE = {"NFL": 0.5, "NBA": 0.7}
+ODDS_FREE_MARKETS = {"NBA": 3, "NFL": 5}
+ODDS_FREE_WINDOW_H = {"NBA": 24, "NFL": 40}
 
 
 def _am_to_p(price):
@@ -496,11 +502,19 @@ def odds_consensus(sport, games, now):
     month = now.strftime("%Y-%m")
     if cache.get("month") != month:
         cache = {"month": month, "events": cache.get("events", {}), "remaining": None, "spent": {}}
-    spent_today = cache.setdefault("spent", {}).get(now.strftime("%Y-%m-%d"), 0)
+    today = now.strftime("%Y-%m-%d")
+    spent_today = cache.setdefault("spent", {}).get(today, 0)
+    by_sport = cache.setdefault("spent_by", {}).setdefault(today, {})
+    spent_sport = by_sport.get(sport, 0)
     rem = cache.get("remaining")
+    paid = rem is not None and rem > ODDS_FREE
     days_left = (datetime(now.year + (now.month == 12), now.month % 12 + 1, 1, tzinfo=timezone.utc) - now).days + 1
     allowance = max(2, int((rem if rem is not None else ODDS_FREE) / max(days_left, 1)))
     budget = max(0, allowance - spent_today)
+    if not paid:
+        budget = max(0, min(budget, int(allowance * ODDS_SHARE.get(sport, 0.5)) - spent_sport))
+    markets = ODDS_MARKETS[sport] if paid else ODDS_MARKETS[sport][:ODDS_FREE_MARKETS.get(sport, 5)]
+    window_h = ODDS_WINDOW_H if paid else ODDS_FREE_WINDOW_H.get(sport, ODDS_WINDOW_H)
 
     # events list costs nothing
     try:
@@ -519,7 +533,7 @@ def odds_consensus(sport, games, now):
     soon.sort(key=lambda x: x[0])
     evc = cache.setdefault("events", {})
     used = 0
-    for mkt, _ in ODDS_MARKETS[sport]:
+    for mkt, _ in markets:
         for t, ev in soon:
             slot = evc.setdefault(ev["id"], {"t": ev.get("commence_time"), "home": ev.get("home_team"), "away": ev.get("away_team"), "m": {}})
             got = slot["m"].get(mkt)
@@ -544,7 +558,9 @@ def odds_consensus(sport, games, now):
                 {"k": b.get("key"), "o": [[o.get("description"), o.get("name"), o.get("point"), o.get("price")]
                                          for m in b.get("markets") or [] if m.get("key") == mkt for o in m.get("outcomes") or []]}
                 for b in r.json().get("bookmakers") or []]}
-    cache["spent"][now.strftime("%Y-%m-%d")] = spent_today + used
+    cache["spent"][today] = spent_today + used
+    by_sport[sport] = spent_sport + used
+    cache["spent_by"] = dict(sorted(cache["spent_by"].items())[-40:])
     cache["spent"] = dict(sorted(cache["spent"].items())[-40:])
     # drop finished events
     cache["events"] = {k: v for k, v in evc.items() if S.parse_t(v.get("t")) and S.parse_t(v["t"]) > now - timedelta(hours=6)}
@@ -583,8 +599,9 @@ def odds_consensus(sport, games, now):
                 out[(S.norm_name(desc), k)] = {"line": line, "pOver": round(sum(at) / len(at), 4), "books": len(rows)}
     rem = cache.get("remaining")
     S.log(f"[odds] {sport}: {len(out)} consensus prop lines, {used:.0f} credits used this run"
-          + (f", {rem:.0f} left this month" if rem is not None else ""))
-    return out, {"remaining": rem, "usedToday": cache["spent"][now.strftime("%Y-%m-%d")], "allowance": allowance}
+          + (f", {rem:.0f} left this month" if rem is not None else "")
+          + f" (budget {budget}, {'paid' if paid else 'free'} plan)")
+    return out, {"remaining": rem, "usedToday": cache["spent"][today], "allowance": allowance}
 
 
 def cons_p_at(cons, k, line, sd, count):
