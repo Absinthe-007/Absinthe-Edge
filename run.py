@@ -11,7 +11,7 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.8"
+VERSION = "4.9"
 RESET_ID = "2026-11-16-fresh-start"  # change this value to wipe the accuracy record again on the next run
 PICK_V = "4.5"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
@@ -597,7 +597,7 @@ def grade(track, now):
         n += 1
         tag = "rec" if e["rec"] else "lean"
         mv = e.get("mv") or "old"
-        for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}", f"mv|{mv}") + ((f"tier|{e['tier']}",) if e.get("tier") else ()):
+        for key in ("all", e["s"], e["pf"], f"{e['s']}|{e['pf']}", f"type|{e['type']}", f"stat|{e['s']}|{e['k']}", f"conf|{conf_bucket(e['prob'])}", f"mv|{mv}") + ((f"tier|{e['tier']}", f"{e['s']}|tier|{e['tier']}") if e.get("tier") else ()):
             bump(agg, f"{tag}|{key}", res, profit)
         # closing-line value: did the market move toward our side after we first saw it? (Kalshi: price of our side, Pick6: the line)
         if res in ("w", "l", "push"):
@@ -621,6 +621,8 @@ def grade(track, now):
             day = (t - timedelta(hours=5)).date().isoformat()
             d = daily.setdefault(day, {"rec": [0, 0], "lean": [0, 0]})
             d[tag][0 if res == "w" else 1] += 1
+            ds = d.setdefault("sp", {}).setdefault(e["s"], {"rec": [0, 0], "lean": [0, 0]})
+            ds[tag][0 if res == "w" else 1] += 1
             c = cal.setdefault(f"{e['s']}|{e['k']}", [0, 0.0, 0])
             raw = e.get("raw") if e.get("raw") is not None else e["prob"]
             rp = raw if e["side"] in ("YES", "MORE") else 1 - raw
@@ -707,6 +709,15 @@ def main():
                 bb = track["binsS"].setdefault(f"{row[0]}|{conf_bucket(row[6])}", [0, 0])
                 bb[0] += 1
                 bb[1] += 1 if row[8] == "w" else 0
+    if not track.get("tierS"):  # one-time: Locks / Strong / Lean records per sport, rebuilt from the graded picks already saved
+        track["tierS"] = True
+        agg0 = track.setdefault("agg", {})
+        for row in track.get("recent") or []:
+            if len(row) > 14 and row[14] and row[8] in ("w", "l", "push", "void"):
+                pr = None
+                if row[1] == "Kalshi" and row[11] and row[8] in ("w", "l"):
+                    pr = (1 - row[11]) / row[11] if row[8] == "w" else -1.0
+                bump(agg0, f"{'rec' if row[10] else 'lean'}|{row[0]}|tier|{row[14]}", row[8], pr)
     M.BIAS = track.get("bias") or {}
     geo = S.load_json(f"{DATA}/cache/geo.json", {})
     old_board = S.load_json(f"{DATA}/board.json", {})
