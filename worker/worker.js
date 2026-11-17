@@ -19,6 +19,7 @@
  *
  * Endpoints (all need the X-App-Password header):
  *   GET  /status            -> balance, limits
+ *   GET  /positions         -> your open Kalshi positions right now (read-only; lets My Bets show a new bet before the next site update)
  *   POST /quote  {ticker, side}                         -> live price for that side
  *   POST /order  {ticker, side, count, price, clientOrderId}
  *        Buys `count` contracts of `side` at up to `price` (dollars, e.g. 0.42), immediate-or-cancel:
@@ -70,6 +71,16 @@ export default {
         const bal = await kalshi(env, base, "GET", "/portfolio/balance");
         if (!bal.ok) return json({ error: kerr(bal) }, 502);
         return json({ ok: true, balance: cents(bal.body.balance), portfolio: cents(bal.body.portfolio_value), limits, demo: base.includes("demo") });
+      }
+
+      if (req.method === "GET" && url.pathname === "/positions") {
+        const r = await kalshi(env, base, "GET", "/portfolio/positions?limit=200&count_filter=position&settlement_status=unsettled");
+        if (!r.ok) return json({ error: kerr(r) }, 502);
+        const positions = (r.body.market_positions || [])
+          .filter(p => Number(p.position_fp || p.position) !== 0)
+          .map(p => ({ ticker: p.ticker, position: Number(p.position_fp ?? p.position), cost: Number(p.market_exposure_dollars ?? 0) || Number(p.total_traded_dollars ?? 0),
+                       fees: Number(p.fees_paid_dollars ?? 0), updated: p.last_updated_ts || null }));
+        return json({ ok: true, positions });
       }
 
       if (req.method === "POST" && url.pathname === "/quote") {
