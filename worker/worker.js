@@ -318,7 +318,7 @@ async function comboRule(env, base) {
     votes[`accept${a === "yes" ? "Yes" : "No"}Gives${o === "yes" ? "Yes" : "No"}`]++;
     if (o === "yes") {
       const paid = Number(fill.yes_price_dollars), yb = Number(q.yes_bid_dollars), nb = Number(q.no_bid_dollars);
-      if (Math.abs(paid - yb) < 0.006) votes.yesPaysYesBid++;
+      if (Math.abs(paid - yb) < 0.006 && Math.abs(paid - (1 - nb)) < 0.006) dbg.ambiguous = (dbg.ambiguous || 0) + 1; else if (Math.abs(paid - yb) < 0.006) votes.yesPaysYesBid++;
       else if (Math.abs(paid - (1 - nb)) < 0.006) votes.yesPaysOneMinusNoBid++;
       else dbg.noPrice++;
     }
