@@ -17,6 +17,12 @@ NFL + NBA picks for **Kalshi** and **DraftKings Pick6**, with a full projected s
 - Projects every game's score, win chance, spread and total.
 - **Self-checking:** saves every pick and projection before the game, grades them against the ESPN box score afterward, and shows the record by platform, bet type, stat and confidence, plus calibration and projection error. Once a stat has 30+ graded picks, the model rescales its own confidence for that stat.
 
+## V4.7: combo and line fixes
+- **Combos add up:** PRA, P+R, P+A, R+A and S+B are now the sum of their parts' adjusted projections. Before, PRA and P+R stacked both teammates-out boosts on the whole total (PRA 60.7 instead of 55.8 for a 40/7/8 player).
+- **Bad lines dropped:** a Pick6 line nowhere near the player's output (like 0.5 points for a 40-point scorer) is no longer a pick, so it can't show up as a "Lock" or pad the accuracy record. Count stats (3-pointers, TDs, steals...) keep their low lines.
+- **PASS label:** on the player card, a Kalshi line with no edge on either side now says PASS instead of naming the cheaper of two bad prices.
+- Assist projections still get the same teammates-out boost as points (now labeled "more playmaking load"); the size isn't backtested yet.
+
 ## V4.0: accuracy pass (backtested)
 Every change below was tested by replaying this season before it shipped: 197 NBA + 149 NFL games against their closing Vegas lines, 6,000+ NBA player-games, and 3,200 graded Kalshi picks.
 - **Games:** the Vegas line was more accurate than the team model, so the model's weight dropped (margin 50% to 10-15%, total to 10-25%). Games without a line use opponent-adjusted team ratings and a home edge measured from this season.

@@ -250,7 +250,7 @@ def extra_factors(sport, rest, inj, pace_mult, game_ctx_b2b):
         foes = ", ".join(m[0] for m in inj.get("foes", [])[:3])
         if sport == "NBA":
             if b.get("scoring") and k in NBA_SCORING | {"turnovers"}:
-                res.append(["Teammates out", 1 + b["scoring"], f"{names} out: more shots to go around"])
+                res.append(["Teammates out", 1 + b["scoring"], f"{names} out: " + ("more playmaking load" if k == "assists" else "more shots to go around")])
             if b.get("reb") and k in NBA_REB | {"pra", "pts_reb"}:
                 res.append(["Teammates out (boards)", 1 + b["reb"] * 0.8, f"{names} out"])
             if ob.get("all") and k in NBA_SCORING | NBA_REB:

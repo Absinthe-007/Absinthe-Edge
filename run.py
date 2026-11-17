@@ -11,9 +11,9 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.6"
+VERSION = "4.7"
 RESET_ID = "2026-11-16-fresh-start"  # change this value to wipe the accuracy record again on the next run
-PICK_V = "4.4"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
+PICK_V = "4.5"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -242,7 +242,7 @@ def build_sport(sport, now, track, geo):
             if l1 < line < l2:
                 return p1 + (p2 - p1) * (line - l1) / (l2 - l1)
         return None
-    picks = []
+    picks, odd_lines = [], []
     for p in props:
         pl = players.get(p.get("pid"))
         st = (logs.get(p.get("pid")) and None)
@@ -260,6 +260,12 @@ def build_sport(sport, now, track, geo):
                 continue
             mu = M.mean(vals)
             proj = {"proj": mu, "sd": max(M.CV.get(p["key"], 0.5) * max(mu, 1), 1.0), "n": len(vals), "factors": []}
+        if (p["platform"] == "Pick6" and p["key"] not in M.COUNT and proj["proj"] >= 5
+                and not 0.3 <= p["line"] / proj["proj"] <= 3.0):
+            # a line nowhere near the player's output (e.g. 0.5 points for a 40-point scorer) is a mislabeled or promo market, not a real
+            # prop; it always "hits", which would inflate the Lock record and the accuracy tab, so it is dropped
+            odd_lines.append(f"{pl['name']} {p.get('stat')} {p['line']} (proj {proj['proj']:.1f})")
+            continue
         raw = M.p_over(p["key"], proj["proj"], proj["sd"], p["line"], sport)
         pm = M.calibrate(raw, calib, sport, p["key"])
         gl = logs.get(p["pid"]) or []
@@ -318,6 +324,8 @@ def build_sport(sport, now, track, geo):
                 elif base["edge"] < 0.10:
                     base["rec"], base["gate"] = False, "no book check"
         picks.append(base)
+    if odd_lines:
+        S.log(f"[picks] {sport}: dropped {len(odd_lines)} implausible Pick6 line(s): " + "; ".join(odd_lines[:8]))
     for p in picks:  # express model/market probability for the side we picked
         if p["side"] in ("LESS", "NO"):
             p["model"] = round(1 - p["model"], 3)

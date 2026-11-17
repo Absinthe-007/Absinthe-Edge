@@ -39,6 +39,8 @@ RATING_K = {"NFL": 5, "NBA": 5}  # pseudo-games of shrinkage toward average in t
 SD_MULT = {"points": 1.2, "pra": 1.2, "pts_reb": 1.15, "pts_ast": 1.1, "rebounds": 1.0, "reb_ast": 1.0, "assists": 0.85, "min": 0.95}
 MED_SHIFT = {"points": -0.10, "pra": -0.10, "pts_reb": -0.10, "pts_ast": -0.08, "rebounds": -0.10, "reb_ast": -0.08, "assists": -0.06}
 NB_R = {"blocks": 5.0, "steals": 10.0}  # count stats that vary more than a Poisson allows
+COMBO_PARTS = {"pra": ("points", "rebounds", "assists"), "pts_reb": ("points", "rebounds"), "pts_ast": ("points", "assists"),
+               "reb_ast": ("rebounds", "assists"), "stl_blk": ("steals", "blocks")}  # NBA combo stats = sum of their parts
 BIAS = {}  # "SPORT|stat" -> multiplier learned from our own graded projections (set by run.py)
 
 
@@ -263,9 +265,24 @@ def project_player(sport, pl, games, game, is_home, opp, dvp, ctx, wx, stand, im
         for f in factors:
             mult *= f[1]
         proj = base * mult
-        bm = BIAS.get(f"{sport}|{k}")
-        if bm:
-            proj *= bm
+        comp = [out[c] for c in COMBO_PARTS[k]] if sport == "NBA" and k in COMBO_PARTS and all(c in out for c in COMBO_PARTS[k]) else None
+        if comp:
+            # A combo is exactly the sum of its parts. Projecting it on its own stacked every teammate-out boost on the whole total
+            # (PRA got +10% and +8% on all three stats: 60.7 instead of 55.8), so build it from the parts' own adjusted projections.
+            # The factors shown are each part's factor weighted by that part's share of the baseline.
+            base = sum(c["base"] for c in comp)
+            proj = sum(c["proj"] for c in comp)
+            shift = {}
+            for c in comp:
+                share = c["base"] / base if base else 0
+                for name, m, note in c["factors"]:
+                    e = shift.setdefault(name, [0.0, note])
+                    e[0] += share * (m - 1)
+            factors = [[n, round(1 + d, 3), note] for n, (d, note) in shift.items() if abs(d) >= 0.005]
+        else:
+            bm = BIAS.get(f"{sport}|{k}")
+            if bm:
+                proj *= bm
         sample = vals(cur)[:12] + vals(prev)[:6]
         sd_base = max(CV.get(k, 0.5) * max(proj, 1), 1.0 if k in COUNT else 2.5)
         if len(sample) >= 5:
