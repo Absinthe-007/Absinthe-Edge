@@ -10,6 +10,7 @@ Writes data/mybets.json.
 import base64
 import json
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -241,7 +242,7 @@ def grade_bet(pos, by_ticker, games, now):
     }
 
 
-def history(sign, limit_pages=5, title_cap=80):
+def history(sign, limit_pages=5, title_cap=400):
     """Settled bets from Kalshi settlements: what you picked, what it cost, what it paid, and your profit or loss."""
     rows, cursor = [], None
     for _ in range(limit_pages):
@@ -267,8 +268,12 @@ def history(sign, limit_pages=5, title_cap=80):
         if i < title_cap:
             m = market(r.get("ticker"))
             title = m.get("title") or title
-            for lg in m.get("mve_selected_legs") or []:
-                legs.append({"label": (lg.get("yes_sub_title") or lg.get("market_ticker") or "").strip(), "side": lg.get("side", "yes")})
+            names = [x.strip() for x in re.split(r",(?=\s*(?:yes|no) )", m.get("title") or "", flags=re.I)] if m.get("mve_selected_legs") else []
+            for j, lg in enumerate(m.get("mve_selected_legs") or []):
+                label = (lg.get("yes_sub_title") or "").strip()
+                if not label and j < len(names):  # leg market gone from the API: use the combo's own title text
+                    label = re.sub(r"^(yes|no)\s+", "", names[j], flags=re.I)
+                legs.append({"label": label or lg.get("market_ticker") or "", "side": lg.get("side", "yes")})
         out.append({"ticker": r.get("ticker"), "title": title, "side": side, "contracts": round(n, 2), "cost": round(cost, 2),
                     "fees": round(fee, 2), "paid": round(paid, 2), "pl": round(paid - cost - fee, 2),
                     "result": "won" if paid > 0 else "lost", "settled": r.get("settled_time"), "legs": legs,
@@ -312,7 +317,7 @@ def main():
         print("My Bets error:", e)
     try:
         hist = history(sign)
-        out["history"] = hist[:300]
+        out["history"] = hist[:500]
         out["historyTotals"] = {"n": len(hist), "won": sum(1 for h in hist if h["result"] == "won"), "cost": round(sum(h["cost"] for h in hist), 2),
                                 "pl": round(sum(h["pl"] for h in hist), 2)}
     except Exception as e:
