@@ -303,18 +303,24 @@ let RULE = null;
 async function comboRule(env, base) {
   if (RULE && RULE.at > Date.now() - 6 * 3600e3) return RULE;
   const qs = await kalshi(env, base, "GET", "/communications/quotes?rfq_user_filter=self&status=executed&limit=50");
-  const quotes = ((qs.ok && qs.body.quotes) || []).filter(q => q.accepted_side && q.rfq_creator_order_id).slice(0, 12);
+  const allQ = (qs.ok && qs.body.quotes) || [];
+  const oid = q => q.rfq_creator_order_id || q.creator_order_id;
+  const quotes = allQ.filter(q => q.accepted_side && oid(q)).slice(0, 12);
+  const dbg = { http: qs.status || (qs.ok ? 200 : "fail"), quotes: allQ.length, usable: quotes.length, fills: 0, noPrice: 0, keys: allQ[0] ? Object.keys(allQ[0]).join(",") : "" };
   const votes = { acceptYesGivesYes: 0, acceptYesGivesNo: 0, acceptNoGivesYes: 0, acceptNoGivesNo: 0, yesPaysYesBid: 0, yesPaysOneMinusNoBid: 0 };
   for (const q of quotes) {
-    const f = await kalshi(env, base, "GET", `/portfolio/fills?order_id=${encodeURIComponent(q.rfq_creator_order_id)}&limit=20`);
+    const f = await kalshi(env, base, "GET", `/portfolio/fills?order_id=${encodeURIComponent(oid(q))}&limit=20`);
     const fill = ((f.ok && f.body.fills) || [])[0];
-    if (!fill || !fill.outcome_side) continue;
-    const a = String(q.accepted_side), o = String(fill.outcome_side);
+    const fo = fill && (fill.outcome_side || fill.side);
+    if (!fo) continue;
+    dbg.fills++;
+    const a = String(q.accepted_side), o = String(fo);
     votes[`accept${a === "yes" ? "Yes" : "No"}Gives${o === "yes" ? "Yes" : "No"}`]++;
     if (o === "yes") {
       const paid = Number(fill.yes_price_dollars), yb = Number(q.yes_bid_dollars), nb = Number(q.no_bid_dollars);
       if (Math.abs(paid - yb) < 0.006) votes.yesPaysYesBid++;
       else if (Math.abs(paid - (1 - nb)) < 0.006) votes.yesPaysOneMinusNoBid++;
+      else dbg.noPrice++;
     }
   }
   const v = votes;
@@ -325,7 +331,7 @@ async function comboRule(env, base) {
   if (v.yesPaysYesBid && !v.yesPaysOneMinusNoBid) priceKey = "yes";
   else if (v.yesPaysOneMinusNoBid && !v.yesPaysYesBid) priceKey = "1-no";
   if (!acceptFor || !priceKey) {
-    return { error: "Combo buying is off until there's at least one combo in your Kalshi history to learn from: Kalshi's docs don't say clearly how combo quotes are priced, so the worker won't guess with your money. Place one small combo in the Kalshi app, then try again." , votes };
+    return { error: "Combo buying is off until there's at least one combo in your Kalshi history to learn from: Kalshi's docs don't say clearly how combo quotes are priced, so the worker won't guess with your money. Place one small combo in the Kalshi app, then try again. [what the worker saw: " + JSON.stringify(dbg) + " " + JSON.stringify(votes) + "]", votes };
   }
   RULE = { at: Date.now(), acceptFor, votes, priceKey,
            price: q => { const x = priceKey === "yes" ? Number(q.yes_bid_dollars) : 1 - Number(q.no_bid_dollars); return x > 0 && x < 1 ? x : null; } };
