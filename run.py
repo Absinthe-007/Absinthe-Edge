@@ -631,6 +631,9 @@ def grade(track, now):
             bb = bins.setdefault(bk, [0, 0])
             bb[0] += 1
             bb[1] += 1 if res == "w" else 0
+            bs = track.setdefault("binsS", {}).setdefault(f"{e['s']}|{bk}", [0, 0])
+            bs[0] += 1
+            bs[1] += 1 if res == "w" else 0
         recent.append([e["s"], e["pf"], e["nm"], e["stat"], e["line"], e["side"], e["prob"], val if not isinstance(val, str) else None, res,
                        e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier"), src, mv])
     for key, e in list(pproj.items()):
@@ -697,6 +700,13 @@ def main():
             del v[4:]
         track["modelV"] = M.MODEL_V
         S.log(f"[model] version {M.MODEL_V}: calibration restarted")
+    if "binsS" not in track:  # one-time: split the calibration table by sport, rebuilt from the graded picks already saved
+        track["binsS"] = {}
+        for row in track.get("recent") or []:
+            if len(row) > 8 and row[8] in ("w", "l") and isinstance(row[6], (int, float)):
+                bb = track["binsS"].setdefault(f"{row[0]}|{conf_bucket(row[6])}", [0, 0])
+                bb[0] += 1
+                bb[1] += 1 if row[8] == "w" else 0
     M.BIAS = track.get("bias") or {}
     geo = S.load_json(f"{DATA}/cache/geo.json", {})
     old_board = S.load_json(f"{DATA}/board.json", {})
@@ -739,7 +749,7 @@ def summary(track):
         n = r.get("w", 0) + r.get("l", 0)
         return {"w": r.get("w", 0), "l": r.get("l", 0), "p": r.get("p", 0), "v": r.get("v", 0), "d": r.get("d", 0), "pct": round(r["w"] / n, 4) if n else None,
                 "roi": round(r["pl"] / r["stake"], 4) if r.get("stake") else None}
-    out = {"agg": {k: pct(k) for k in agg}, "daily": track.get("daily", {}), "bins": track.get("bins", {}),
+    out = {"agg": {k: pct(k) for k in agg}, "daily": track.get("daily", {}), "bins": track.get("bins", {}), "binsS": track.get("binsS", {}),
            "projErr": track.get("projErr", {}), "recent": track.get("recent", [])[-250:], "calib": track.get("calib", {}), "clv": track.get("clv", {}),
            "pending": len(track.get("pending", {})), "since": track.get("since"), "gradedAt": track.get("gradedAt")}
     track.setdefault("since", datetime.now(timezone.utc).date().isoformat())
