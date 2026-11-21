@@ -17,6 +17,11 @@ NFL + NBA picks for **Kalshi** and **DraftKings Pick6**, with a full projected s
 - Projects every game's score, win chance, spread and total.
 - **Self-checking:** saves every pick and projection before the game, grades them against the ESPN box score afterward, and shows the record by platform, bet type, stat and confidence, plus calibration and projection error. Once a stat has 30+ graded picks, the model rescales its own confidence for that stat.
 
+## V4.17: stricter Kalshi recommendations
+- Graded Nov 16-21: 55 Kalshi recommendations, 42 of them under 30c. Those won 7 of 42 against 7.5 expected from the price (the model said 10), so there was no edge on long shots and Kalshi recs lost about 19%.
+- A Kalshi recommendation now needs a price between 30c and 88c and a sportsbook consensus that agrees by 2c or more; the old "no book check but a 10c margin" path is removed. Pick6 recommendations are untouched (165-87 over the same stretch).
+- Left alone on purpose: the confidence shrink already handles the model being overconfident in its own leans (61% claimed vs 55.5% right on points), so no change there.
+
 ## V4.7: combo and line fixes
 - **Combos add up:** PRA, P+R, P+A, R+A and S+B are now the sum of their parts' adjusted projections. Before, PRA and P+R stacked both teammates-out boosts on the whole total (PRA 60.7 instead of 55.8 for a 40/7/8 player).
 - **Bad lines dropped:** a Pick6 line nowhere near the player's output (like 0.5 points for a 40-point scorer) is no longer a pick, so it can't show up as a "Lock" or pad the accuracy record. Count stats (3-pointers, TDs, steals...) keep their low lines.

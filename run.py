@@ -11,9 +11,9 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.14"
+VERSION = "4.17"
 RESET_ID = "2026-11-16-fresh-start"  # change this value to wipe the accuracy record again on the next run
-PICK_V = "4.5"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
+PICK_V = "4.6"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -314,14 +314,17 @@ def build_sport(sport, now, track, geo):
                 # V4.4 gate, from 3,200 graded Kalshi picks: hit rate trailed the Kalshi price in every price band (the model alone
                 # has no edge), and tails were the worst (model said 13%, actual 6% under 10c). So: no long shots, and a recommendation
                 # needs an independent sportsbook check; without one it needs a much bigger margin.
+                # V4.17: graded Nov 16-21, 42 of 55 Kalshi recs were under 30c and won about what the price implied (7 of 42 vs 7.5
+                # expected; the model said 10), i.e. no edge on long shots. So the floor moves 12c -> 30c, and a sportsbook check is
+                # now required for every recommendation (the "no book check but a 10c margin" fallback is gone).
                 px = base["price"]
-                if not (0.12 <= px <= 0.88):
-                    base["rec"] = False
+                if not (0.30 <= px <= 0.88):
+                    base["rec"], base["gate"] = False, "long shot" if px < 0.30 else "too pricey"
                 elif cp is not None:
                     book_p = cp if base["side"] == "YES" else 1 - cp
                     if book_p - px < 0.02:
                         base["rec"], base["gate"] = False, "books disagree"
-                elif base["edge"] < 0.10:
+                else:
                     base["rec"], base["gate"] = False, "no book check"
         picks.append(base)
     if odd_lines:
