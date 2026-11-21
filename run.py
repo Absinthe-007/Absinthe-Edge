@@ -12,7 +12,7 @@ import extras as X
 import feeds as F
 
 VERSION = "4.17"
-RESET_ID = "2026-11-16-fresh-start"  # change this value to wipe the accuracy record again on the next run
+RESET_ID = "2026-11-21-v4.17-kalshi-rule"  # change this value to wipe the accuracy record again on the next run
 PICK_V = "4.6"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
 DATA = "data"
@@ -698,7 +698,8 @@ def main():
     track = S.load_json(f"{DATA}/track.json", {})
     if track.get("resetId") != RESET_ID:  # one-time fresh start: clear every graded record, saved pick and learned correction
         S.log(f"[reset] accuracy tracker cleared ({len(track.get('recent') or [])} graded picks and {len(track.get('pending') or {})} saved picks dropped)")
-        track = {"resetId": RESET_ID, "modelV": M.MODEL_V, "open": track.get("open") or {}}
+        keep = {k: track[k] for k in ("calib", "bias") if k in track and track.get("modelV") == M.MODEL_V}  # V4.17: keep what the model has learned (shrink, bias); only the scoreboard restarts
+        track = {"resetId": RESET_ID, "modelV": M.MODEL_V, "open": track.get("open") or {}, **keep}
     if track.get("modelV") != M.MODEL_V:  # the probability model changed: restart the learned shrink so corrections don't stack
         track["cal"], track["calib"], track["bias"] = {}, {}, {}
         for v in (track.get("projErr") or {}).values():
