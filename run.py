@@ -11,7 +11,7 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.17"
+VERSION = "4.18"
 RESET_ID = "2026-11-21-v4.17-kalshi-rule"  # change this value to wipe the accuracy record again on the next run
 PICK_V = "4.6"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
@@ -466,6 +466,8 @@ def fill_graded(r):
 
 
 def conf_bucket(p):
+    if p < 0.5: # Kalshi picks on the cheap side can be under 50%; they are not "50-55"
+        return "<50"
     for lo in (0.70, 0.65, 0.60, 0.55):
         if p >= lo:
             return f"{int(lo*100)}+" if lo == 0.70 else f"{int(lo*100)}-{int(lo*100)+5}"
@@ -481,9 +483,16 @@ def bump(agg, key, res, profit=None):
         r["pl"] = round(r["pl"] + profit, 3)
 
 
+def _dupe_key(pf, s, g, who, k, line, side):
+    """The same bet listed twice (a Pick6 prop with and without a multiplier, a Kalshi market under two tickers) is graded once."""
+    return (pf, s, g, who, k, line, side)
+
 def save_pending(track, board, now):
     pend = track.setdefault("pending", {})
     pproj = track.setdefault("pendingProj", {})
+    ck_ids = {}
+    for i0, e0 in pend.items():
+        ck_ids[_dupe_key(e0.get("pf"), e0.get("s"), e0.get("g"), e0.get("pid") or e0.get("team") or e0.get("nm"), e0.get("k"), e0.get("line"), e0.get("side"))] = i0
     for sport, b in board.items():
         if not b:
             continue
@@ -493,6 +502,14 @@ def save_pending(track, board, now):
                 continue
             if p["platform"] == "Kalshi" and not (p["rec"] or p.get("main")):
                 continue
+            ck = _dupe_key(p["platform"], sport, p["gameId"], p.get("pid") or p.get("team") or p.get("player") or p.get("label"), p.get("key") or p.get("type"), p["line"], p["side"])
+            dup = ck_ids.get(ck)
+            if dup and dup != p["id"] and dup in pend:
+                if p["rec"] and not pend[dup].get("rec"):
+                    del pend[dup] # keep the recommended copy
+                else:
+                    continue
+            ck_ids[ck] = p["id"]
             old = pend.get(p["id"])
             same = bool(old) and old.get("side") == p["side"]
             p0 = old.get("p0") if same else p.get("price")   # first price/line we saw for this side; later runs only update the latest
@@ -640,7 +657,7 @@ def grade(track, now):
             bs[0] += 1
             bs[1] += 1 if res == "w" else 0
         recent.append([e["s"], e["pf"], e["nm"], e["stat"], e["line"], e["side"], e["prob"], val if not isinstance(val, str) else None, res,
-                       e["t"][:10], e["rec"], e.get("price"), e["k"], e["type"], e.get("tier"), src, mv])
+                       (t - timedelta(hours=5)).date().isoformat(), e["rec"], e.get("price"), e["k"], e["type"], e.get("tier"), src, mv])
     for key, e in list(pproj.items()):
         t = S.parse_t(e["t"])
         if not t or now < t + timedelta(hours=GRADE_AFTER_H[e["s"]]):
@@ -747,6 +764,7 @@ def main():
         players[sport] = b.pop("details")
         board[sport] = b
     save_pending(track, {s: (dict(b, players=b["players"]) if b else None) for s, b in board.items()}, now)
+    track.setdefault("since", RESET_ID[:10]) # saved with the record, so "Tracking since" stops moving to today on every run
     track["updated"] = now.isoformat()[:19] + "Z"
     S.save_json(f"{DATA}/track.json", track)
     S.save_json(f"{DATA}/players.json", players)
