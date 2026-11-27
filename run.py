@@ -11,7 +11,7 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.20"
+VERSION = "4.21"
 RESET_ID = "2026-11-25-v4.19-clean-record"  # change this value to wipe the accuracy record again on the next run
 PICK_V = "4.7"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 

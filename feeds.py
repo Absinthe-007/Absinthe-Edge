@@ -474,15 +474,18 @@ ODDS_MARKETS = {
     "NFL": [("player_reception_yds", "rec_yds"), ("player_rush_yds", "rush_yds"), ("player_pass_yds", "pass_yds"),
             ("player_receptions", "receptions"), ("player_anytime_td", "anytime_td")],
 }
-ODDS_REFRESH_H = 12
-ODDS_WINDOW_H = 40
+ODDS_REFRESH_H = 30   # V4.21: each game+market is fetched once, then only refetched when the saved copy is older than this
+ODDS_LATE_H = 3       # ...plus one late refresh of the first market this close to the start (injury news moves lines), if the saved copy is older than ODDS_LATE_AGE_H
+ODDS_LATE_AGE_H = 8
+ODDS_WINDOW_H = 30
 ODDS_FREE = 500
+ODDS_RESERVE = 0.10   # keep 10% of what's left in the month unspent
 # Free plan: each sport gets its own slice of the daily credit allowance so one can't starve the other
 # (unused credits still flow to the other sport), and NBA is trimmed to its 3 core markets.
 # A paid plan (more than ODDS_FREE credits left) lifts the caps and fetches every market.
 ODDS_SHARE = {"NFL": 0.5, "NBA": 0.7}
 ODDS_FREE_MARKETS = {"NBA": 3, "NFL": 5}
-ODDS_FREE_WINDOW_H = {"NBA": 24, "NFL": 40}
+ODDS_FREE_WINDOW_H = {"NBA": 14, "NFL": 28}  # lines are sharpest close to the game, and a short window spends each credit once instead of re-buying it
 
 
 def _am_to_p(price):
@@ -507,57 +510,76 @@ def odds_consensus(sport, games, now):
     by_sport = cache.setdefault("spent_by", {}).setdefault(today, {})
     spent_sport = by_sport.get(sport, 0)
     rem = cache.get("remaining")
-    paid = rem is not None and rem > ODDS_FREE
-    days_left = (datetime(now.year + (now.month == 12), now.month % 12 + 1, 1, tzinfo=timezone.utc) - now).days + 1
-    allowance = max(2, int((rem if rem is not None else ODDS_FREE) / max(days_left, 1)))
-    budget = max(0, allowance - spent_today)
-    if not paid:
-        budget = max(0, min(budget, int(allowance * ODDS_SHARE.get(sport, 0.5)) - spent_sport))
-    markets = ODDS_MARKETS[sport] if paid else ODDS_MARKETS[sport][:ODDS_FREE_MARKETS.get(sport, 5)]
-    window_h = ODDS_WINDOW_H if paid else ODDS_FREE_WINDOW_H.get(sport, ODDS_WINDOW_H)
-
-    # events list costs nothing
+    # events list costs nothing and its response carries the credits left, so a top-up or a monthly reset is noticed
     try:
         r = S.SESSION.get(f"{ODDS}/sports/{ODDS_SPORT[sport]}/events", params={"apiKey": key}, timeout=30)
         events = r.json() if r.status_code == 200 else []
+        if r.headers.get("x-requests-remaining") is not None:
+            rem = cache["remaining"] = _f(r.headers.get("x-requests-remaining"))
         if r.status_code != 200:
             S.log(f"[odds] {sport}: events call failed ({r.status_code}) {r.text[:120]}")
     except Exception as ex:
         events = []
         S.log(f"[odds] {sport}: events call failed: {ex}")
+    paid = rem is not None and rem > ODDS_FREE
+    days_left = (datetime(now.year + (now.month == 12), now.month % 12 + 1, 1, tzinfo=timezone.utc) - now).days + 1
+    left = (rem if rem is not None else ODDS_FREE) * (1 - ODDS_RESERVE)
+    allowance = int(left / max(days_left, 1))
+    if rem is not None and rem <= 0:
+        allowance = 0  # out of credits: stop calling until the credits come back (the events call above notices)
+    budget = max(0, allowance - spent_today)
+    if not paid:
+        budget = max(0, min(budget, int(allowance * ODDS_SHARE.get(sport, 0.5)) - spent_sport))
+    markets = ODDS_MARKETS[sport] if paid else ODDS_MARKETS[sport][:ODDS_FREE_MARKETS.get(sport, 5)]
+    window_h = ODDS_WINDOW_H if paid else ODDS_FREE_WINDOW_H.get(sport, ODDS_WINDOW_H)
     soon = []
     for ev in events if isinstance(events, list) else []:
         t = S.parse_t(ev.get("commence_time"))
-        if t and now - timedelta(hours=1) < t < now + timedelta(hours=ODDS_WINDOW_H):
+        if t and now - timedelta(hours=1) < t < now + timedelta(hours=window_h):
             soon.append((t, ev))
     soon.sort(key=lambda x: x[0])
     evc = cache.setdefault("events", {})
     used = 0
-    for mkt, _ in markets:
-        for t, ev in soon:
-            slot = evc.setdefault(ev["id"], {"t": ev.get("commence_time"), "home": ev.get("home_team"), "away": ev.get("away_team"), "m": {}})
+
+    def fetch(ev, mkt, slot):
+        nonlocal used, budget
+        try:
+            r = S.SESSION.get(f"{ODDS}/sports/{ODDS_SPORT[sport]}/events/{ev['id']}/odds",
+                              params={"apiKey": key, "regions": "us", "markets": mkt, "oddsFormat": "american"}, timeout=30)
+        except Exception:
+            return
+        if r.headers.get("x-requests-remaining") is not None:
+            cache["remaining"] = _f(r.headers.get("x-requests-remaining"))
+        if r.status_code != 200:
+            S.log(f"[odds] {sport} {mkt}: {r.status_code} {r.text[:120]}")
+            if r.status_code in (401, 429):
+                budget = 0
+            return
+        used += _f(r.headers.get("x-requests-last")) or 1
+        slot["m"][mkt] = {"at": now.isoformat()[:19], "books": [
+            {"k": b.get("key"), "o": [[o.get("description"), o.get("name"), o.get("point"), o.get("price")]
+                                     for m in b.get("markets") or [] if m.get("key") == mkt for o in m.get("outcomes") or []]}
+            for b in r.json().get("bookmakers") or []]}
+
+    # soonest game first, every market for it, so a short budget completes the games that matter now instead of thinly covering all of them
+    for t, ev in soon:
+        slot = evc.setdefault(ev["id"], {"t": ev.get("commence_time"), "home": ev.get("home_team"), "away": ev.get("away_team"), "m": {}})
+        for mkt, _ in markets:
             got = slot["m"].get(mkt)
             if got and now - S.parse_t(got["at"]) < timedelta(hours=ODDS_REFRESH_H):
                 continue
             if used >= budget:
                 break
-            try:
-                r = S.SESSION.get(f"{ODDS}/sports/{ODDS_SPORT[sport]}/events/{ev['id']}/odds",
-                                  params={"apiKey": key, "regions": "us", "markets": mkt, "oddsFormat": "american"}, timeout=30)
-            except Exception:
-                continue
-            if r.headers.get("x-requests-remaining") is not None:
-                cache["remaining"] = _f(r.headers.get("x-requests-remaining"))
-            if r.status_code != 200:
-                S.log(f"[odds] {sport} {mkt}: {r.status_code} {r.text[:120]}")
-                if r.status_code in (401, 429):
-                    budget = 0
-                continue
-            used += _f(r.headers.get("x-requests-last")) or 1
-            slot["m"][mkt] = {"at": now.isoformat()[:19], "books": [
-                {"k": b.get("key"), "o": [[o.get("description"), o.get("name"), o.get("point"), o.get("price")]
-                                         for m in b.get("markets") or [] if m.get("key") == mkt for o in m.get("outcomes") or []]}
-                for b in r.json().get("bookmakers") or []]}
+            fetch(ev, mkt, slot)
+    # one late refresh of the top market for games about to start, only with credits left over
+    for t, ev in soon:
+        if not (now < t < now + timedelta(hours=ODDS_LATE_H)) or used >= budget:
+            continue
+        slot = evc.get(ev["id"])
+        mkt = markets[0][0]
+        got = slot and slot["m"].get(mkt)
+        if got and now - S.parse_t(got["at"]) >= timedelta(hours=ODDS_LATE_AGE_H):
+            fetch(ev, mkt, slot)
     cache["spent"][today] = spent_today + used
     by_sport[sport] = spent_sport + used
     cache["spent_by"] = dict(sorted(cache["spent_by"].items())[-40:])
