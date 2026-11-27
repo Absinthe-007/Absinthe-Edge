@@ -42,6 +42,8 @@ NB_R = {"blocks": 5.0, "steals": 10.0}  # count stats that vary more than a Pois
 COMBO_PARTS = {"pra": ("points", "rebounds", "assists"), "pts_reb": ("points", "rebounds"), "pts_ast": ("points", "assists"),
                "reb_ast": ("rebounds", "assists"), "stl_blk": ("steals", "blocks")}  # NBA combo stats = sum of their parts
 BIAS = {}  # "SPORT|stat" -> multiplier learned from our own graded projections (set by run.py)
+GAME_SHRINK = {"NFL": 1.0, "NBA": 1.0}  # learned from graded game winners (set by run.py): pulls win chances toward 50/50 only when the data says we're overconfident
+KALSHI_FEE_RATE = 0.07  # Kalshi taker fee is about 7% x price x (1 - price) per contract
 
 
 def phi(x):
@@ -309,6 +311,15 @@ def p_over(k, proj, sd, line, sport="NBA"):
     return phi((proj + shift * sd - line) / max(sd, 0.5))
 
 
+def kalshi_fee(price):
+    return KALSHI_FEE_RATE * price * (1 - price)
+
+
+def game_p(sport, p):
+    """Win/cover chance after the learned per-sport shrink toward 50/50."""
+    return clamp(0.5 + (p - 0.5) * GAME_SHRINK.get(sport, 1.0), 0.02, 0.98)
+
+
 def calibrate(p, calib, sport, k):
     s = (calib or {}).get(f"{sport}|{k}", (calib or {}).get(sport, DEFAULT_SHRINK))
     return clamp(0.5 + (p - 0.5) * s, 0.02, 0.98)
@@ -413,7 +424,7 @@ def project_game(g, stand, ctx_h, ctx_a, wx, vegas_m, ratings=None):
         total = w["total"] * total + (1 - w["total"]) * g["ou"]
     hp, ap = (total + margin) / 2, (total - margin) / 2
     return {"homePts": round(hp, 1), "awayPts": round(ap, 1), "margin": round(margin, 1), "total": round(total, 1),
-            "pHome": round(phi(margin / MARGIN_SD[sp]), 3), "modelMargin": round(m_model, 1), "modelTotal": round(t_model, 1),
+            "pHome": round(game_p(sp, phi(margin / MARGIN_SD[sp])), 3), "pHomeRaw": round(phi(margin / MARGIN_SD[sp]), 3), "modelMargin": round(m_model, 1), "modelTotal": round(t_model, 1),
             "vegasMargin": vegas_m, "notes": notes, "rated": bool(rt)}
 
 
@@ -432,8 +443,8 @@ def kalshi_game_prob(m, g, gp):
     my_margin = gp["margin"] if is_home else -gp["margin"]
     name = g["home"]["short"] if is_home else g["away"]["short"]
     if m["key"] == "ml":
-        return phi(my_margin / MARGIN_SD[sp]), f"{name} to win"
-    return phi((my_margin - m["line"]) / MARGIN_SD[sp]), f"{name} wins by {m['line']}+"
+        return game_p(sp, phi(my_margin / MARGIN_SD[sp])), f"{name} to win"
+    return game_p(sp, phi((my_margin - m["line"]) / MARGIN_SD[sp])), f"{name} wins by {m['line']}+"
 
 
 def market_mid(m):
@@ -454,6 +465,8 @@ def kalshi_side(p, m, min_edge=0.03):
         side, price, prob, edge = "YES", m["yesAsk"], p, ey
     else:
         side, price, prob, edge = "NO", m["noAsk"], 1 - p, en
-    rec = edge >= min_edge and 0.06 <= price <= 0.94
-    return {"side": side, "price": round(price, 2), "prob": round(prob, 3), "edge": round(edge, 3), "rec": rec,
-            "ev": round(prob / price - 1, 3) if price else None}
+    fee = kalshi_fee(price)
+    # the edge has to survive Kalshi's fee: graded Kalshi picks were down ~6% ROI, about what fees alone cost at coin-flip prices
+    rec = (edge - fee) >= min_edge and 0.06 <= price <= 0.94
+    return {"side": side, "price": round(price, 2), "prob": round(prob, 3), "edge": round(edge, 3), "fee": round(fee, 3), "rec": rec,
+            "ev": round((prob - fee) / price - 1, 3) if price else None}

@@ -107,6 +107,7 @@ def winner_pick(g, game_picks):
     gr = "A" if score >= 72 else "B" if score >= 58 else "C" if score >= 44 else "D"
     return {"sureGr": q[0], "sureS": q[1], "pickGr": gr, "pickS": score, "pick": w["abbr"], "tk": (mk or {}).get("ticker"),
             "pWin": round(pr["pHome"] if home_wins else 1 - pr["pHome"], 3),
+            "pRaw": round(pr.get("pHomeRaw", pr["pHome"]) if home_wins else 1 - pr.get("pHomeRaw", pr["pHome"]), 3),
             "price": price, "edge": None if edge is None else round(edge, 3)}
 
 

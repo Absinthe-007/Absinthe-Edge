@@ -11,9 +11,9 @@ import model as M
 import extras as X
 import feeds as F
 
-VERSION = "4.19"
+VERSION = "4.20"
 RESET_ID = "2026-11-25-v4.19-clean-record"  # change this value to wipe the accuracy record again on the next run
-PICK_V = "4.6"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
+PICK_V = "4.7"  # bump only when pick logic or probabilities change; graded picks are split by it on the Accuracy tab
 
 DATA = "data"
 GRADE_AFTER_H = {"NFL": 4.0, "NBA": 3.0}
@@ -202,6 +202,7 @@ def build_sport(sport, now, track, geo):
         rk = (dvp["ranks"].get(opp) or {}).get(grp)
         players[aid] = {"id": aid, "name": pl["name"], "team": team, "opp": opp, "home": is_home, "gameId": g["id"], "pos": pl["pos"], "grp": grp,
                         "img": pl["img"], "dkImg": dk, "inj": pl.get("inj"), "proj": {k: round(v["proj"], 1) for k, v in proj.items()},
+                        "base": {k: round(v["base"], 1) for k, v in proj.items()},
                         "oppRank": rk, "rest": {k: v for k, v in rest.items()}, "injSrc": pl.get("injSrc"),
                         "depth": (prof.get(aid) or {}).get("depth"),
                         "l10": {k: list(reversed(proj[k]["l10"])) for k in proj if k in lines_by_pid.get(aid, ())}}
@@ -306,7 +307,7 @@ def build_sport(sport, now, track, geo):
                          "rec": mult is not None and prob >= be_p + 0.02 and proj["n"] >= 3 and not injured,
                          "url": "https://pick6.draftkings.com/?sport=" + sport})
         else:
-            ks = M.kalshi_side(pm, p, 0.05)
+            ks = M.kalshi_side(pm, p, 0.04)  # net of Kalshi's fee (V4.20), so about the same gross hurdle as before at coin-flip prices
             base.update(ks)
             base.update({"title": p["title"], "ticker": p["ticker"], "url": p["url"], "yesAsk": p["yesAsk"], "noAsk": p["noAsk"]})
             base["rec"] = base["rec"] and proj["n"] >= 3 and not injured
@@ -385,7 +386,7 @@ def build_sport(sport, now, track, geo):
         model_p = p
         far = abs(model_p - M.market_mid(m)) >= FAR_FROM_MARKET
         p = M.blend(p, M.market_mid(m), 0.25)
-        ks = M.kalshi_side(p, m, 0.04)
+        ks = M.kalshi_side(p, m, 0.03)  # net of Kalshi's fee (V4.20)
         gpicks.append({"id": m["id"], "platform": "Kalshi", "sport": sport, "gameId": g["id"], "type": m["key"], "label": label,
                        "line": m["line"], "team": m.get("team"), "title": m["title"], "ticker": m["ticker"], "url": m["url"],
                        "yesAsk": m["yesAsk"], "noAsk": m["noAsk"], "start": g["start"], "rawP": round(model_p, 3),
@@ -522,7 +523,7 @@ def save_pending(track, board, now):
         for aid, pl in b["players"].items():
             g = next((x for x in b["games"] if x["id"] == pl["gameId"]), None)
             if g and S.parse_t(g["start"]) > now:
-                pproj[f"{pl['gameId']}|{aid}"] = {"s": sport, "g": pl["gameId"], "pid": aid, "t": g["start"], "p": pl["proj"]}
+                pproj[f"{pl['gameId']}|{aid}"] = {"s": sport, "g": pl["gameId"], "pid": aid, "t": g["start"], "p": pl["proj"], "b": pl.get("base")}
 
 
 def grade(track, now):
@@ -676,8 +677,13 @@ def grade(track, now):
             av = vals.get(k)
             if isinstance(av, (int, float)):
                 r = perr.setdefault(f"{e['s']}|{k}", [0, 0.0, 0.0, 0])
-                while len(r) < 6:  # [n, sum|err|, sum actual, within 25%, sum signed raw error, n signed]
-                    r.append(0.0 if len(r) == 4 else 0)
+                while len(r) < 9:  # [n, sum|err|, sum actual, within 25%, sum signed raw error, n signed, then on rows that also have a baseline: sum|baseline err|, sum|our err|, sum actual]
+                    r.append(0.0 if len(r) in (4, 6, 7, 8) else 0)
+                bv = (e.get("b") or {}).get(k)
+                if isinstance(bv, (int, float)):  # baseline = the plain season/last-5/split/opponent average, before our adjustments
+                    r[6] = round(r[6] + abs(bv - av), 2)
+                    r[7] = round(r[7] + abs(pv - av), 2)
+                    r[8] = round(r[8] + av, 2)
                 r[0] += 1
                 r[1] = round(r[1] + abs(pv - av), 2)
                 r[2] = round(r[2] + av, 2)
@@ -695,18 +701,40 @@ def grade(track, now):
             kk = M.clamp((hits / cnt - 0.5) / (sp / cnt - 0.5), 0.25, 1.2)
             calib[k] = round((kk * cnt + M.DEFAULT_SHRINK * 40) / (cnt + 40), 3)
     track["calib"] = calib
-    # learn: nudge each stat's projection by half of its measured average over/under-shoot (needs 150+ graded games, capped at 5%)
+    # learn: nudge each stat's projection toward its measured average over/under-shoot. The nudge grows with the sample
+    # (half the miss at most, n/(n+100) of that) instead of switching on at 150 games, and is capped at 7%.
     bias = {}
     for k, v in perr.items():
-        if len(v) >= 6 and v[5] >= 150 and v[2] > 0:
+        if len(v) >= 6 and v[5] >= 40 and v[2] > 0:
             mean_act = v[2] / max(v[0], 1)
             if mean_act >= 0.3:
-                bias[k] = round(M.clamp(1 - 0.5 * (v[4] / v[5]) / mean_act, 0.95, 1.05), 4)
+                wgt = 0.5 * v[5] / (v[5] + 100)
+                bias[k] = round(M.clamp(1 - wgt * (v[4] / v[5]) / mean_act, 0.93, 1.07), 4)
     track["bias"] = bias
     M.BIAS = bias
     if n:
         track["gradedAt"] = now.isoformat()[:19] + "Z"
     S.log(f"[grade] graded {n} ({nk} by Kalshi settlement, {nx} disputed); pending {len(pend)} picks, {len(pproj)} projections")
+
+
+def learn_game_shrink(prior_games=150):
+    """Fit how far to pull game win chances toward 50/50, per sport, from graded winners in data/gametrack.json.
+    Least-squares slope of (won - 0.5) on (chance - 0.5), blended with 'no shrink' by prior_games so a short hot or cold
+    stretch can't swing it (the market was just as overconfident in the same window). Never stretches, floor 0.75."""
+    try:
+        rows = (S.load_json(f"{DATA}/gametrack.json", {}) or {}).get("rows") or []
+    except Exception:
+        return
+    for sp in ("NFL", "NBA"):
+        xs = [(r.get("pRaw") if r.get("pRaw") is not None else r["pWin"], 1 if r["res"] == "w" else 0)
+              for r in rows if r.get("s") == sp and r.get("res") in ("w", "l") and isinstance(r.get("pWin"), (int, float))]
+        den = sum((p - 0.5) ** 2 for p, _ in xs)
+        if len(xs) < 20 or den <= 0:
+            continue
+        k_fit = sum((p - 0.5) * (y - 0.5) for p, y in xs) / den
+        k = (k_fit * len(xs) + 1.0 * prior_games) / (len(xs) + prior_games)
+        M.GAME_SHRINK[sp] = round(M.clamp(k, 0.75, 1.0), 3)
+        S.log(f"[game-cal] {sp}: {len(xs)} graded winners, fitted {k_fit:.2f}, using shrink {M.GAME_SHRINK[sp]}")
 
 
 def main():
@@ -740,6 +768,7 @@ def main():
                     pr = (1 - row[11]) / row[11] if row[8] == "w" else -1.0
                 bump(agg0, f"{'rec' if row[10] else 'lean'}|{row[0]}|tier|{row[14]}", row[8], pr)
     M.BIAS = track.get("bias") or {}
+    learn_game_shrink()
     geo = S.load_json(f"{DATA}/cache/geo.json", {})
     old_board = S.load_json(f"{DATA}/board.json", {})
     old_players = S.load_json(f"{DATA}/players.json", {})
